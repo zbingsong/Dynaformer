@@ -2,7 +2,7 @@
 
 ### Pre-trained model 
 
-You can download the trained model from this [OneDrive link](https://1drv.ms/u/s!Ah9r82oejjV8n0tf5MY1TC8bfGfA?e=pxOG6Y) and unzip the archive to this folder. The archive contains the following files: 
+You can download the trained model from this [OneDrive link](https://1drv.ms/f/s!Ah9r82oejjV8n0Bw4vAddMLBK-m-?e=95ciZv) to this folder. The link contains the following files: 
 
 1. Model checkpoint files. These three files are the best three models on CASF-2016 from the experiments.
   - `model1.pt`
