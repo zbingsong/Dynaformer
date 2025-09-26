@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 import pickle
-from preprocess import gen_feature, gen_graph, to_pyg_graph, get_info, RF_score, GB_score, GetECIF
+from .preprocess import gen_feature, gen_graph, to_pyg_graph, get_info, RF_score, GB_score, GetECIF
 from joblib import Parallel, delayed
 from utils import read_mol, obabel_pdb2mol, pymol_pocket
 import numpy as np
