@@ -27,8 +27,6 @@ fi
 # Check tools
 command -v pymol >/dev/null 2>&1 || { echo "pymol not found in PATH. Please install or give full path."; exit 1; }
 command -v obabel >/dev/null 2>&1 || { echo "obabel not found in PATH. Please install OpenBabel."; exit 1; }
-# command -v pdb_tidy >/dev/null 2>&1 || { echo "pdb_tidy not found. Install pdb-tools (pip install pdb-tools)"; exit 1; }
-# command -v pdb_element >/dev/null 2>&1 || { echo "pdb_element not found. Install pdb-tools (pip install pdb-tools)"; exit 1; }
 
 mkdir -p -- "$OUTPUT_DIR"
 
@@ -61,7 +59,7 @@ quit
 PYML
 
   # run PyMOL in batch mode (quiet)
-  if ! pymol -cq "$script_pml" >/dev/null; then
+  if ! pymol -cq "$script_pml"; then
     echo "PyMOL failed for $file (check file or PyMOL installation)."
     continue
   fi
@@ -71,25 +69,12 @@ PYML
   echo "  -> protein PDB: ${base}_protein.pdb"
 
   # 2) ligand -> tidy/element -> obabel -> SDF
-  if obabel -ipdb "$ligand_raw" -osdf -O "$OUTPUT_DIR/${base}_ligand.sdf" -x3v -h --partialcharge eem >/dev/null; then
+  if obabel -ipdb "$ligand_raw" -osdf -O "$OUTPUT_DIR/${base}_ligand.sdf" -x3v -h --partialcharge eem; then
     echo "  -> ligand SDF: ${base}_ligand.sdf (with -h)"
   else
     echo "  [ERROR] obabel failed to convert ligand for $base"
     continue
   fi
-
-  # 3) pocket -> tidy/element -> obabel -> SDF
-#   if fix_pdb "$pocket_raw" "$tmpd/pocket_fixed.pdb"; then
-#     if obabel -ipdb "$tmpd/pocket_fixed.pdb" -osdf -O "$OUTPUT_DIR/${base}_protein_pocket.sdf" -h >/dev/null 2>&1; then
-#       echo "  -> pocket SDF: ${base}_protein_pocket.sdf (with -h)"
-#     elif obabel -ipdb "$tmpd/pocket_fixed.pdb" -osdf -O "$OUTPUT_DIR/${base}_protein_pocket.sdf" >/dev/null 2>&1; then
-#       echo "  -> pocket SDF: ${base}_protein_pocket.sdf (without -h)"
-#     else
-#       echo "  [ERROR] obabel failed to convert pocket for $base"
-#     fi
-#   else
-#     echo "  -> no pocket residues for $base"
-#   fi
 
 done
 
