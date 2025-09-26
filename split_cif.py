@@ -18,17 +18,14 @@ import argparse
 import os
 import sys
 import tempfile
+import subprocess
+from openbabel import pybel
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from Bio.PDB import MMCIFParser, PDBIO, Select, NeighborSearch
 from Bio.PDB.Structure import Structure
 
-try:
-    from openbabel import pybel
-except Exception as e:
-    print("ERROR: openbabel (pybel) not available. Install OpenBabel (pybel) in your conda env.")
-    raise
 
 # --- Select classes for PDBIO ---
 class ProteinSelect(Select):
@@ -64,21 +61,23 @@ def save_selection_to_pdb(structure: Structure, select_obj: Select, out_path: st
     io.set_structure(structure)
     io.save(out_path, select_obj)
 
-def pdb_to_sdf_with_pybel(pdb_path: str, sdf_path: str, add_h: bool = True):
+def pdb_to_sdf(pdb_path: str, sdf_path: str, add_h: bool = True):
     """
     Convert a PDB file (possibly containing multiple small molecules / fragments) to multi-entry SDF.
+    Uses pdb_element to ensure correct element assignment from atom names.
     Uses pybel (OpenBabel) for bond perception and SDF writing.
     """
-    # pybel.Outputfile handles append/overwrite logic
+    tmp_corrected = Path(pdb_path).with_suffix('.elem.pdb')
+    with open(tmp_corrected, 'w') as fh:
+        subprocess.run(['pdb_element', pdb_path], stdout=fh, check=True)
+    # now let pybel read the corrected file
     outfile = pybel.Outputfile("sdf", sdf_path, overwrite=True)
-    any_written = False
-    for mol in pybel.readfile("pdb", pdb_path):
+    for mol in pybel.readfile("pdb", str(tmp_corrected)):
         if add_h:
             mol.addh()
         outfile.write(mol)
-        any_written = True
     outfile.close()
-    return any_written
+    tmp_corrected.unlink()  # cleanup
 
 def find_ligand_and_protein_atoms(structure: Structure) -> tuple[list, list]:
     ligand_atoms = []
@@ -154,7 +153,7 @@ def process_cif_file(cif_path: str, outdir: str, distance: float = 5.0):
     try:
         save_selection_to_pdb(structure, HeteroSelect(), tmp_ligand_pdb.name)
         # convert to SDF using pybel (will perform bond perception)
-        written = pdb_to_sdf_with_pybel(tmp_ligand_pdb.name, str(ligand_sdf), add_h=True)
+        written = pdb_to_sdf(tmp_ligand_pdb.name, str(ligand_sdf), add_h=True)
         if written:
             print(f"  -> ligand SDF written: {ligand_sdf}")
         else:
@@ -172,7 +171,7 @@ def process_cif_file(cif_path: str, outdir: str, distance: float = 5.0):
         if pocket_keys:
             # save pocket PDB (only those residues) then convert to SDF
             save_selection_to_pdb(structure, ResidueKeySelect(pocket_keys), tmp_pocket_pdb.name)
-            written = pdb_to_sdf_with_pybel(tmp_pocket_pdb.name, str(pocket_sdf), add_h=True)
+            written = pdb_to_sdf(tmp_pocket_pdb.name, str(pocket_sdf), add_h=True)
             if written:
                 print(f"  -> pocket SDF written: {pocket_sdf} (distance = {distance} Å)")
             else:
