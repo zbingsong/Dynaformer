@@ -6,7 +6,6 @@ import torch
 from rdkit import Chem
 from mol2graph import mol2graph
 from pymol import cmd
-from ecif import GetECIF
 
 SPATIAL_EDGE = [4, 0, 0]
 

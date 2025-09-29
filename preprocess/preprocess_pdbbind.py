@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 import pickle
 from preprocess import gen_feature, load_pk_data, gen_graph, to_pyg_graph, get_info, RF_score, GB_score, GetECIF
 from joblib import Parallel, delayed

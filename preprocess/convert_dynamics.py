@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import re
-from tqdm import tqdm, trange
+from tqdm import tqdm
 from joblib import Parallel, delayed
 import argparse
 import utils

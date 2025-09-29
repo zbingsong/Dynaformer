@@ -1,8 +1,7 @@
-from features import (allowable_features, atom_to_feature_vector,
- bond_to_feature_vector, atom_feature_vector_to_dict, bond_feature_vector_to_dict) 
+from features import atom_to_feature_vector, bond_to_feature_vector
 from rdkit import Chem
 import numpy as np
-from utils import read_mol
+
 
 def mol2graph(mol: Chem.Mol):
     conformer = mol.GetConformer(0)
@@ -54,6 +53,6 @@ def mol2graph(mol: Chem.Mol):
     return graph 
 
 
-if __name__ == '__main__':
-    graph = smiles2graph('O1C=C[C@H]([C@H]1O2)c3c2cc(OC)c4c3OC(=O)C5=C4CCC(=O)5')
-    print(graph)
+# if __name__ == '__main__':
+#     graph = smiles2graph('O1C=C[C@H]([C@H]1O2)c3c2cc(OC)c4c3OC(=O)C5=C4CCC(=O)5')
+#     print(graph)
