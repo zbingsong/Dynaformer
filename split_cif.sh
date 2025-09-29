@@ -34,16 +34,19 @@ mkdir -p -- "$OUTPUT_DIR"
 shopt -s nullglob
 
 tmpd="$(mktemp -d)"
-script_pml="$tmpd/script.pml"
-ligand_raw="$tmpd/ligand_raw.pdb"
-protein_raw="$tmpd/protein_raw.pdb"
-pocket_raw="$tmpd/pocket_raw.pdb"
 
-for file in "$INPUT_DIR"/*.{cif,mmcif}; do
-  [[ -e "$file" ]] || continue
+
+subroutine() {
+  local file="$1"
+  local script_pml="$tmpd/${BASHPID}_script.pml"
+  local ligand_raw="$tmpd/${BASHPID}_ligand_raw.pdb"
+  local protein_raw="$tmpd/${BASHPID}_protein_raw.pdb"
+  local pocket_raw="$tmpd/${BASHPID}_pocket_raw.pdb"
+
+  [[ -e "$file" ]] || return 0  # skip if no files found
   base="$(basename "$file")"
   base="${base%.*}"        # strip single extension (.cif/.mmcif)
-  echo "== Processing: $base =="
+  # echo "== Processing: $base =="
 
   # create PyMOL .pml (we use alter to force resn='LIG')
   cat > "$script_pml" <<-PYML
@@ -61,22 +64,30 @@ PYML
   # run PyMOL in batch mode (quiet)
   if ! pymol -cq "$script_pml"; then
     echo "PyMOL failed for $file (check file or PyMOL installation)."
-    continue
+    return 1
   fi
 
   # 1) protein: tidy + element (leave as final protein PDB)
   mv "$protein_raw" "$OUTPUT_DIR/${base}_protein.pdb"
-  echo "  -> protein PDB: ${base}_protein.pdb"
+  # echo "  -> protein PDB: ${base}_protein.pdb"
 
   # 2) ligand -> tidy/element -> obabel -> SDF
   if obabel -ipdb "$ligand_raw" -osdf -O "$OUTPUT_DIR/${base}_ligand.sdf" -x3v -h --partialcharge eem; then
-    echo "  -> ligand SDF: ${base}_ligand.sdf (with -h)"
+    # echo "  -> ligand SDF: ${base}_ligand.sdf (with -h)"
+    return 0
   else
-    echo "  [ERROR] obabel failed to convert ligand for $base"
-    continue
+    echo "OpenBabel failed to convert ligand for $base"
+    return 1
   fi
+}
 
+
+for file in "$INPUT_DIR"/*.{cif,mmcif}
+do
+  subroutine "$file" &
 done
+
+wait
 
 # cleanup
 rm -rf "$tmpd"
