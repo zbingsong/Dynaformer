@@ -10,10 +10,9 @@ import math
 from typing import Optional, Tuple
 
 import torch
-from fairseq import utils
-from fairseq.modules.fairseq_dropout import FairseqDropout
-from fairseq.modules.quant_noise import quant_noise
+from quant_noise import quant_noise
 from torch import Tensor, nn
+import torch.nn.functional as F
 
 
 class MultiheadAttention(nn.Module):
@@ -41,8 +40,8 @@ class MultiheadAttention(nn.Module):
         self.qkv_same_dim = self.kdim == embed_dim and self.vdim == embed_dim
 
         self.num_heads = num_heads
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
+        self.dropout_module = nn.Dropout(
+            dropout
         )
 
         self.head_dim = embed_dim // num_heads
@@ -197,7 +196,7 @@ class MultiheadAttention(nn.Module):
         if before_softmax:
             return attn_weights, v
 
-        attn_weights_float = utils.softmax(
+        attn_weights_float = F.softmax(
             attn_weights, dim=-1, onnx_trace=self.onnx_trace
         )
         attn_weights = attn_weights_float.type_as(attn_weights)

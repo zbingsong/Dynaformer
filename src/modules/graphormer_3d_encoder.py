@@ -1,9 +1,7 @@
 from typing import Callable, Tuple
 import torch
 import torch.nn as nn
-from torch import Tensor
 from torch.nn import functional
-from .graphormer_layers import init_params
 from math import pi
 
 torch._C._jit_set_profiling_mode(False)
@@ -14,14 +12,9 @@ torch._C._jit_override_can_fuse_on_gpu(True)
 
 @torch.jit.script
 def gaussian(x, mean, std):
-    pi = 3.14159
+    # pi = 3.14159
     a = (2*pi) ** 0.5
     return torch.exp(-0.5 * (((x - mean) / std) ** 2)) / (a * std)
-
-
-def init_params(module):
-    if isinstance(module, nn.Embedding):
-        module.weight.data.normal_(mean=0.0, std=0.02)
 
 
 class NonLinear(nn.Module):
@@ -70,7 +63,8 @@ class GBF2DEncoder(nn.Module):
                  num_dist_head_kernel: int = 128,
                  num_edge_types: int = 512*16,
                  num_heads: int = 32,
-                 embedding_dim: int = 768, **kwargs):
+                 embedding_dim: int = 768, **kwargs
+    ) -> None:
         super().__init__()
         self.num_dist_head_kernel = num_dist_head_kernel
         self.edge_types = num_edge_types
@@ -114,7 +108,8 @@ class GBF3DEncoder(nn.Module):
                  num_dist_head_kernel: int = 128,
                  num_edge_types: int = 512*16,
                  num_heads: int = 32,
-                 embedding_dim: int = 768, **kwargs):
+                 embedding_dim: int = 768, **kwargs
+    ) -> None:
         super().__init__()
         self.num_dist_head_kernel = num_dist_head_kernel
         self.num_edge_types = num_edge_types
@@ -155,12 +150,10 @@ class GBF3DEncoder(nn.Module):
 
 class Graphormer3DEncoder(nn.Module):
     def __init__(
-        self,
-        encoder_name: str = "gbf",
-        **kwargs
-
+            self,
+            encoder_name: str = "gbf",
+            **kwargs
     ) -> None:
-
         super().__init__()
 
         args = {k: v for k, v in locals().items() if k not in ['self', '__class__', 'args', 'kwargs']}

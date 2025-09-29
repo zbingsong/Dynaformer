@@ -6,14 +6,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
-from fairseq import utils
-from fairseq.modules import LayerNorm
-from fairseq.modules.fairseq_dropout import FairseqDropout
-from fairseq.modules.quant_noise import quant_noise
+from quant_noise import quant_noise
+import torch.nn.functional as F
 
 from .multihead_attention import MultiheadAttention
 
@@ -41,17 +39,14 @@ class GraphormerGraphEncoderLayer(nn.Module):
         self.attention_dropout = attention_dropout
         self.q_noise = q_noise
         self.qn_block_size = qn_block_size
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
+        self.dropout_module = nn.Dropout(dropout)
 
-        self.activation_dropout_module = FairseqDropout(
-            activation_dropout, module_name=self.__class__.__name__
-        )
-
+        self.activation_dropout_module = nn.Dropout(activation_dropout)
 
         # Initialize blocks
-        self.activation_fn = utils.get_activation_fn(activation_fn)
+        # self.activation_fn = utils.get_activation_fn(activation_fn)
+        self.activation_fn = F.relu if activation_fn == "relu" else F.gelu if activation_fn == "gelu" else None
+        assert self.activation_fn is not None, f"activation_fn {activation_fn} not supported"
         self.self_attn = self.build_self_attention(
             self.embedding_dim,
             num_attention_heads,
@@ -63,9 +58,9 @@ class GraphormerGraphEncoderLayer(nn.Module):
 
         self.sandwich_ln = sandwich_ln
         # layer norm associated with the self attention layer
-        self.self_attn_layer_norm = LayerNorm(self.embedding_dim, export=export)
+        self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
         # layer norm associated with the self attention layer, sandwich
-        self.self_attn_sandwich_layer_norm = LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
+        self.self_attn_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
 
         self.fc1 = self.build_fc1(
             self.embedding_dim,
@@ -81,8 +76,8 @@ class GraphormerGraphEncoderLayer(nn.Module):
         )
 
         # layer norm associated with the position wise feed-forward NN
-        self.final_layer_norm = LayerNorm(self.embedding_dim, export=export)
-        self.final_sandwich_layer_norm = LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
+        self.final_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
+        self.final_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)

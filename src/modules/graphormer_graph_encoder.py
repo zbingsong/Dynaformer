@@ -6,12 +6,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from fairseq.modules import FairseqDropout, LayerDropModuleList, LayerNorm
-from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
+from layer_drop import LayerDropModuleList
+from quant_noise import quant_noise as apply_quant_noise_
 
 from .multihead_attention import MultiheadAttention
 from .graphormer_layers import GraphNodeFeature, GraphAttnBias
@@ -79,9 +79,7 @@ class GraphormerGraphEncoder(nn.Module):
     ) -> None:
 
         super().__init__()
-        self.dropout_module = FairseqDropout(
-            dropout, module_name=self.__class__.__name__
-        )
+        self.dropout_module = nn.Dropout(dropout)
         self.layerdrop = layerdrop
         self.embedding_dim = embedding_dim
         self.apply_graphormer_init = apply_graphormer_init
@@ -135,7 +133,7 @@ class GraphormerGraphEncoder(nn.Module):
             self.quant_noise = None
 
         if encoder_normalize_before:
-            self.emb_layer_norm = LayerNorm(self.embedding_dim, export=export)
+            self.emb_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
         else:
             self.emb_layer_norm = None
 
