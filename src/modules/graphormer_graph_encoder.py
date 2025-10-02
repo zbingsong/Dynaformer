@@ -6,12 +6,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, List
 
 import torch
 import torch.nn as nn
-from layer_drop import LayerDropModuleList
-from quant_noise import quant_noise as apply_quant_noise_
+from .layer_drop import LayerDropModuleList
+from .quant_noise import quant_noise as apply_quant_noise_
 
 from .multihead_attention import MultiheadAttention
 from .graphormer_layers import GraphNodeFeature, GraphAttnBias
@@ -65,7 +65,7 @@ class GraphormerGraphEncoder(nn.Module):
         encoder_normalize_before: bool = False,
         apply_graphormer_init: bool = False,
         activation_fn: str = "gelu",
-        embed_scale: float = None,
+        embed_scale: Optional[float] = None,
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
@@ -133,7 +133,7 @@ class GraphormerGraphEncoder(nn.Module):
             self.quant_noise = None
 
         if encoder_normalize_before:
-            self.emb_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
+            self.emb_layer_norm = nn.LayerNorm(self.embedding_dim)
         else:
             self.emb_layer_norm = None
 
@@ -206,7 +206,7 @@ class GraphormerGraphEncoder(nn.Module):
         last_state_only: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
         attn_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[Union[torch.Tensor, List[torch.Tensor]], torch.Tensor]:
         is_tpu = False
         # compute padding mask. This is needed for multi-head attention
         data_x = batched_data["x"]

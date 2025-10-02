@@ -10,7 +10,7 @@ import math
 from typing import Optional, Tuple
 
 import torch
-from quant_noise import quant_noise
+from .quant_noise import quant_noise
 from torch import Tensor, nn
 import torch.nn.functional as F
 
@@ -74,7 +74,7 @@ class MultiheadAttention(nn.Module):
 
         self.reset_parameters()
 
-        self.onnx_trace = True
+        # Remove deprecated onnx_trace
 
     def prepare_for_onnx_export_(self):
         raise NotImplementedError
@@ -133,10 +133,10 @@ class MultiheadAttention(nn.Module):
         assert list(query.size()) == [tgt_len, bsz, embed_dim]
         if key is not None:
             src_len, key_bsz, _ = key.size()
-            if not torch.jit.is_scripting():
-                assert key_bsz == bsz
-                assert value is not None
-                assert src_len, bsz == value.shape[:2]
+            # Remove torch.jit.is_scripting() check as it's deprecated
+            assert key_bsz == bsz
+            assert value is not None
+            assert src_len, bsz == value.shape[:2]
 
         q = self.q_proj(query)
         k = self.k_proj(query)
@@ -197,7 +197,7 @@ class MultiheadAttention(nn.Module):
             return attn_weights, v
 
         attn_weights_float = F.softmax(
-            attn_weights, dim=-1, onnx_trace=self.onnx_trace
+            attn_weights, dim=-1
         )
         attn_weights = attn_weights_float.type_as(attn_weights)
         attn_probs = self.dropout_module(attn_weights)

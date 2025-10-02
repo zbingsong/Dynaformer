@@ -10,7 +10,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-from quant_noise import quant_noise
+from .quant_noise import quant_noise
 import torch.nn.functional as F
 
 from .multihead_attention import MultiheadAttention
@@ -58,9 +58,9 @@ class GraphormerGraphEncoderLayer(nn.Module):
 
         self.sandwich_ln = sandwich_ln
         # layer norm associated with the self attention layer
-        self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
+        self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim)
         # layer norm associated with the self attention layer, sandwich
-        self.self_attn_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
+        self.self_attn_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim) if self.sandwich_ln else None
 
         self.fc1 = self.build_fc1(
             self.embedding_dim,
@@ -76,8 +76,8 @@ class GraphormerGraphEncoderLayer(nn.Module):
         )
 
         # layer norm associated with the position wise feed-forward NN
-        self.final_layer_norm = nn.LayerNorm(self.embedding_dim, export=export)
-        self.final_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim, export=export) if self.sandwich_ln else None
+        self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
+        self.final_sandwich_layer_norm = nn.LayerNorm(self.embedding_dim) if self.sandwich_ln else None
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(nn.Linear(input_dim, output_dim), q_noise, qn_block_size)
@@ -128,7 +128,7 @@ class GraphormerGraphEncoderLayer(nn.Module):
             attn_mask=self_attn_mask,
         )
         x = self.dropout_module(x)
-        if self.sandwich_ln:
+        if self.sandwich_ln and self.self_attn_sandwich_layer_norm is not None:
             x = self.self_attn_sandwich_layer_norm(x)
         x = residual + x
         if not self.sandwich_ln:
@@ -141,7 +141,7 @@ class GraphormerGraphEncoderLayer(nn.Module):
         x = self.activation_dropout_module(x)
         x = self.fc2(x)
         x = self.dropout_module(x)
-        if self.sandwich_ln:
+        if self.sandwich_ln and self.final_sandwich_layer_norm is not None:
             x = self.final_sandwich_layer_norm(x)
         x = residual + x
         if not self.sandwich_ln:

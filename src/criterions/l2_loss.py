@@ -1,108 +1,161 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fairseq.dataclass.configs import FairseqDataclass
-
 import torch
 import torch.nn as nn
-from fairseq import metrics
-from fairseq.criterions import FairseqCriterion, register_criterion
+from typing import Dict, Any, Tuple, Optional
+from dataclasses import dataclass
 
 
-@register_criterion("l2_loss", dataclass=FairseqDataclass)
-class GraphPredictionL1Loss(FairseqCriterion):
+@dataclass
+class CriterionOutput:
+    """Output from criterion computation."""
+    loss: torch.Tensor
+    sample_size: int
+    logging_output: Dict[str, Any]
+
+
+class BaseCriterion(nn.Module):
+    """Base class for modern PyTorch criterions without Fairseq dependencies."""
+    
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
+        """Compute the loss for the given sample."""
+        raise NotImplementedError
+        
+    def reduce_metrics(self, logging_outputs: list) -> Dict[str, float]:
+        """Aggregate logging outputs from distributed training."""
+        raise NotImplementedError
+
+
+class L2Loss(BaseCriterion):
     """
-    Implementation for the L2 loss (MAE loss) used in graphormer model training.
+    Modern PyTorch implementation of L2 loss (MSE) for Graphormer model training.
+    Removes Fairseq dependencies while preserving functionality.
     """
-    acc_loss, inc = 0, 0
-
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
+    
+    def __init__(self):
+        super().__init__()
+        # Normalization constants for molecular dynamics data
+        self.target_mean = 6.529300030461668
+        self.target_std = 1.9919705951218716
+        
+    def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
+        """Compute the L2 loss for the given sample.
+        
+        Args:
+            model: The Graphormer model
+            sample: Dictionary containing:
+                - "net_input": Model input data including "batched_data"
+                - "target": Target values
+                - "nsamples": Number of samples in batch
+            reduce: Whether to reduce the loss (legacy compatibility)
+            
+        Returns:
+            CriterionOutput with loss, sample_size, and logging info
         """
         sample_size = sample["nsamples"]
-
+        
+        # Get number of atoms for logging
         with torch.no_grad():
             natoms = sample["net_input"]["batched_data"]["x"].shape[1]
-
+        
+        # Forward pass through model
         logits = model(**sample["net_input"])
+        
+        # Handle sample weight estimation (if model returns weights)
         if isinstance(logits, tuple):
             logits, weights = logits
         else:
             weights = torch.ones(logits.shape, dtype=logits.dtype, device=logits.device)
+            
+        # Get targets from model (maintains compatibility with different target formats)
         targets = model.get_targets(sample, [logits])
-        # md data
-        targets_normalize = (targets - 6.529300030461668) / 1.9919705951218716
-
-        loss = nn.MSELoss(reduction="none")(logits, targets_normalize[: logits.size(0)])
+        
+        # Normalize targets using molecular dynamics constants
+        targets_normalized = (targets - self.target_mean) / self.target_std
+        
+        # Compute MSE loss with weights
+        loss = nn.MSELoss(reduction="none")(logits, targets_normalized[:logits.size(0)])
         loss = (loss * weights).sum()
-
+        
         logging_output = {
-            "loss": loss.data,
+            "loss": loss.detach(),
             "sample_size": logits.size(0),
             "nsentences": sample_size,
             "ntokens": natoms,
         }
-        return loss, sample_size, logging_output
-
-    @staticmethod
-    def reduce_metrics(logging_outputs) -> None:
-        """Aggregate logging outputs from data parallel training."""
+        
+        return CriterionOutput(
+            loss=loss,
+            sample_size=sample_size,
+            logging_output=logging_output
+        )
+    
+    def reduce_metrics(self, logging_outputs: list) -> Dict[str, float]:
+        """Aggregate logging outputs from distributed training."""
         loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
-
-        metrics.log_scalar("loss", loss_sum / sample_size, sample_size, round=6)
-
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
+        
+        return {
+            "loss": loss_sum / sample_size if sample_size > 0 else 0.0,
+            "sample_size": sample_size,
+        }
 
 
-@register_criterion("l2_loss_with_flag", dataclass=FairseqDataclass)
-class GraphPredictionL1LossWithFlag(GraphPredictionL1Loss):
+class L2LossWithFlag(L2Loss):
     """
-    Implementation for the binary log loss used in graphormer model training.
+    L2 loss with FLAG adversarial training support.
+    Modern PyTorch implementation without Fairseq dependencies.
     """
-
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
+    
+    def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
+        """Compute the L2 loss with FLAG perturbations.
+        
+        Args:
+            model: The Graphormer model
+            sample: Dictionary containing input data and targets
+            reduce: Whether to reduce the loss (legacy compatibility)
+            
+        Returns:
+            CriterionOutput with loss, sample_size, and logging info
         """
         sample_size = sample["nsamples"]
-        perturb = sample.get("perturb", None)
-
+        perturb = sample.get("perturb", None)  # FLAG perturbations
+        
+        # Get number of atoms for logging
         batch_data = sample["net_input"]["batched_data"]["x"]
         with torch.no_grad():
             natoms = batch_data.shape[1]
+            
+        # Forward pass with perturbations
         logits = model(**sample["net_input"], perturb=perturb)
+        
+        # Handle sample weight estimation
         if isinstance(logits, tuple):
             logits, weights = logits
         else:
             weights = torch.ones(logits.shape, dtype=logits.dtype, device=logits.device)
+            
+        # Get and normalize targets
         targets = model.get_targets(sample, [logits])
-        # md data
-        targets_normalize = (targets - 6.529300030461668) / 1.9919705951218716
-
-        loss = nn.MSELoss(reduction="none")(logits, targets_normalize[: logits.size(0)])
+        targets_normalized = (targets - self.target_mean) / self.target_std
+        
+        # Compute weighted MSE loss
+        loss = nn.MSELoss(reduction="none")(logits, targets_normalized[:logits.size(0)])
         loss = (loss * weights).sum()
-
+        
         logging_output = {
-            "loss": loss.data,
+            "loss": loss.detach(),
             "sample_size": logits.size(0),
             "nsentences": sample_size,
             "ntokens": natoms,
         }
-        return loss, sample_size, logging_output
+        
+        return CriterionOutput(
+            loss=loss,
+            sample_size=sample_size,
+            logging_output=logging_output
+        )

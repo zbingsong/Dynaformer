@@ -1,19 +1,13 @@
 from typing import Callable, Tuple
 import torch
 import torch.nn as nn
-from torch.nn import functional
-from math import pi
-
-torch._C._jit_set_profiling_mode(False)
-torch._C._jit_set_profiling_executor(False)
-torch._C._jit_override_can_fuse_on_cpu(True)
-torch._C._jit_override_can_fuse_on_gpu(True)
+import torch.nn.functional as F
 
 
 @torch.jit.script
 def gaussian(x, mean, std):
-    # pi = 3.14159
-    a = (2*pi) ** 0.5
+    pi_val = 3.14159265359
+    a = (2 * pi_val) ** 0.5
     return torch.exp(-0.5 * (((x - mean) / std) ** 2)) / (a * std)
 
 
@@ -26,7 +20,7 @@ class NonLinear(nn.Module):
         self.layer2 = nn.Linear(hidden, output_size, bias=bias)
 
     def forward(self, x):
-        x = functional.gelu(self.layer1(x))
+        x = F.gelu(self.layer1(x))
         x = self.layer2(x)
         return x
 

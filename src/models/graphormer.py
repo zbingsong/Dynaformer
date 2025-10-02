@@ -7,401 +7,338 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-
-import fairseq.modules
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from fairseq import utils
-from fairseq.models import (
-    FairseqEncoder,
-    FairseqEncoderModel,
-    register_model,
-    register_model_architecture,
-)
-from fairseq.modules import (
-    LayerNorm,
-)
-from fairseq.utils import safe_hasattr
+from dataclasses import dataclass
+from typing import Optional
 
-from ..modules import init_graphormer_params, GraphormerGraphEncoder
+from src.modules import init_graphormer_params, GraphormerGraphEncoder
 
 logger = logging.getLogger(__name__)
 
 
-@register_model("graphormer")
-class GraphormerModel(FairseqEncoderModel):
-    def __init__(self, args, encoder):
-        super().__init__(encoder)
-        self.args = args
+@dataclass
+class GraphormerConfig:
+    """Configuration class for Graphormer model."""
+    # Basic model architecture
+    encoder_embed_dim: int = 768
+    encoder_layers: int = 12
+    encoder_attention_heads: int = 32
+    encoder_ffn_embed_dim: int = 768
+    num_classes: int = 1
+    max_nodes: int = 512
+    
+    # Dropout settings
+    dropout: float = 0.1
+    attention_dropout: float = 0.1
+    act_dropout: float = 0.0
+    layerdrop: float = 0.0
+    
+    # Model behavior
+    encoder_normalize_before: bool = True
+    apply_graphormer_init: bool = False
+    activation_fn: str = "gelu"
+    embed_scale: Optional[float] = None
+    sandwich_ln: bool = False
+    
+    # Graph-specific parameters
+    num_atoms: int = 512*9
+    num_in_degree: int = 512
+    num_out_degree: int = 512
+    num_edges: int = 512*3
+    num_spatial: int = 512
+    num_edge_dis: int = 128
+    edge_type: str = "multi_hop"
+    multi_hop_max_dist: int = 5
+    
+    # 3D encoder settings
+    dist_head: str = "none"
+    num_dist_head_kernel: int = 128
+    num_edge_types: int = 512*16
+    
+    # Additional features
+    fingerprint: bool = False
+    sample_weight_estimator: bool = False
+    sample_weight_estimator_pat: str = "pdbbind"
+    
+    # Legacy compatibility
+    share_encoder_input_output_embed: bool = False
+    no_token_positional_embeddings: bool = False
 
-        if getattr(args, "apply_graphormer_init", False):
+
+class GraphormerModel(nn.Module):
+    """Modern PyTorch implementation of Graphormer model without Fairseq dependencies."""
+    
+    def __init__(self, config: GraphormerConfig):
+        super().__init__()
+        self.config = config
+        
+        # Create encoder
+        self.encoder = GraphormerEncoder(config)
+        
+        if config.apply_graphormer_init:
             self.apply(init_graphormer_params)
-        self.encoder_embed_dim = args.encoder_embed_dim
+        
+        self.encoder_embed_dim = config.encoder_embed_dim
 
-    @staticmethod
-    def add_args(parser):
-        """Add model-specific arguments to the parser."""
-        # Arguments related to dropout
-        parser.add_argument(
-            "--dropout", type=float, metavar="D", help="dropout probability"
-        )
-        parser.add_argument(
-            "--attention-dropout",
-            type=float,
-            metavar="D",
-            help="dropout probability for" " attention weights",
-        )
-        parser.add_argument(
-            "--act-dropout",
-            type=float,
-            metavar="D",
-            help="dropout probability after activation in FFN",
-        )
-        parser.add_argument(
-            "--layerdrop",
-            type=float,
-            metavar="D",
-            default=0.0,
-            help="layer wise drop",
-        )
-        # encoder args
-        parser.add_argument(
-            "--encoder-normalize-before",
-            action="store_true",
-            help="apply layernorm before each encoder block",
-        )
-        parser.add_argument(
-            "--apply-graphormer-init",
-            action="store_true",
-            help="use custom param initialization for Graphormer",
-        )
-        parser.add_argument(
-            "--activation-fn",
-            choices=utils.get_available_activation_fns(),
-            help="activation function to use",
-        )
-        parser.add_argument(
-            "--embed-scale",
-            type=float,
-            default=-1.0,
-            help="Embedding scale apply to node embedding"
-        )
-        # Arguments related to hidden states and self-attention
-        parser.add_argument(
-            "--encoder-layers", type=int, metavar="N", help="num encoder layers"
-        )
-        parser.add_argument(
-            "--encoder-ffn-embed-dim",
-            type=int,
-            metavar="N",
-            help="encoder embedding dimension for FFN",
-        )
-        parser.add_argument(
-            "--encoder-attention-heads",
-            type=int,
-            metavar="N",
-            help="num encoder attention heads",
-        )
-        # Arguments related to input and output embeddings
-        parser.add_argument(
-            "--encoder-embed-dim",
-            type=int,
-            metavar="N",
-            help="encoder embedding dimension",
-        )
-        parser.add_argument(  # you shall not pass
-            "--share-encoder-input-output-embed",
-            action="store_true",
-            help="share encoder input and output embeddings",
-        )
-        parser.add_argument(
-            "--no-token-positional-embeddings",
-            action="store_true",
-            help="if set, disables positional embeddings" " (outside self attention)",
-        )
-
-        parser.add_argument(
-            "--sandwich-ln",
-            default=False,
-            action="store_true",
-            help="use sandwich layernorm for the encoder block",
-        )
-        # 3d_encoder
-
-        parser.add_argument(
-            "--dist-head",
-            type=str,
-            choices=['none', 'gbf', 'gbf3d', 'bucket', 'embed3d'],
-            default='none',
-            help="3d encoding head"
-        )
-
-        parser.add_argument(
-            "--num-dist-head-kernel",
-            type=int,
-            default=128,
-            help="Number of kernels in distance head"
-        )
-        parser.add_argument(
-            "--num-edge-types",
-            type=int,
-            default=512*16,
-            help="number of atom type for gbf dist head"
-        )
-
-        parser.add_argument(
-            "--sample-weight-estimator",
-            default=False,
-            action="store_true",
-            help="add soft weight for loss"
-        )
-        parser.add_argument(
-            "--sample-weight-estimator-pat",
-            default="pdbbind",
-            type=str,
-            help="pattern to assign 1.0 weight"
-        )
-
-        parser.add_argument(
-            "--fingerprint",
-            default=False,
-            action='store_true',
-            help="pattern to assign 1.0 weight"
-        )
-
+    @classmethod
+    def from_args(cls, args):
+        """Create model from legacy args object for compatibility."""
+        config = GraphormerConfig()
+        
+        # Map args to config
+        for field_name in config.__dataclass_fields__:
+            if hasattr(args, field_name):
+                setattr(config, field_name, getattr(args, field_name))
+            # Handle args with different names
+            elif hasattr(args, field_name.replace('_', '-')):
+                setattr(config, field_name, getattr(args, field_name.replace('_', '-')))
+        
+        # Handle special cases
+        if hasattr(args, 'tokens_per_sample') and not hasattr(args, 'max_nodes'):
+            config.max_nodes = args.tokens_per_sample
+        
+        if hasattr(args, 'embed_scale') and args.embed_scale > 0:
+            config.embed_scale = args.embed_scale
+            
+        logger.info(f"Created GraphormerModel with config: {config}")
+        return cls(config)
 
     def max_nodes(self):
         return self.encoder.max_nodes
 
-    @classmethod
-    def build_model(cls, args, task):
-        """Build a new model instance."""
-        # make sure all arguments are present in older models
-        base_architecture(args)
-
-        if not safe_hasattr(args, "max_nodes"):
-            args.max_nodes = args.tokens_per_sample
-
-        logger.info(args)
-
-        encoder = GraphormerEncoder(args)
-        return cls(args, encoder)
-
     def forward(self, batched_data, **kwargs):
         return self.encoder(batched_data, **kwargs)
 
+    def get_targets(self, sample, net_output):
+        """Get targets from sample for compatibility with training."""
+        return sample["target"]
 
-class GraphormerEncoder(FairseqEncoder):
-    def __init__(self, args):
-        super().__init__(dictionary=None)
-        self.max_nodes = args.max_nodes
+
+class GraphormerEncoder(nn.Module):
+    """Modern PyTorch encoder implementation without Fairseq dependencies."""
+    
+    def __init__(self, config: GraphormerConfig):
+        super().__init__()
+        self.config = config
+        self.max_nodes = config.max_nodes
 
         self.graph_encoder = GraphormerGraphEncoder(
-            # < for graphormer
-            num_atoms=args.num_atoms,
-            num_in_degree=args.num_in_degree,
-            num_out_degree=args.num_out_degree,
-            num_edges=args.num_edges,
-            num_spatial=args.num_spatial,
-            num_edge_dis=args.num_edge_dis,
-            edge_type=args.edge_type,
-            multi_hop_max_dist=args.multi_hop_max_dist,
-            # >
-            num_encoder_layers=args.encoder_layers,
-            embedding_dim=args.encoder_embed_dim,
-            ffn_embedding_dim=args.encoder_ffn_embed_dim,
-            num_attention_heads=args.encoder_attention_heads,
-            dropout=args.dropout,
-            attention_dropout=args.attention_dropout,
-            activation_dropout=args.act_dropout,
-            layerdrop=args.layerdrop,  # !
-            encoder_normalize_before=args.encoder_normalize_before,
-            apply_graphormer_init=args.apply_graphormer_init,
-            activation_fn=args.activation_fn,
-            embed_scale=args.embed_scale if args.embed_scale > 0 else None,  # !
-            dist_head=args.dist_head,
-            sandwich_ln=args.sandwich_ln,
-            # 3d_encoder
-            num_dist_head_kernel=args.num_dist_head_kernel,
-            num_edge_types=args.num_edge_types,
+            # Graph-specific parameters
+            num_atoms=config.num_atoms,
+            num_in_degree=config.num_in_degree,
+            num_out_degree=config.num_out_degree,
+            num_edges=config.num_edges,
+            num_spatial=config.num_spatial,
+            num_edge_dis=config.num_edge_dis,
+            edge_type=config.edge_type,
+            multi_hop_max_dist=config.multi_hop_max_dist,
+            # Architecture parameters
+            num_encoder_layers=config.encoder_layers,
+            embedding_dim=config.encoder_embed_dim,
+            ffn_embedding_dim=config.encoder_ffn_embed_dim,
+            num_attention_heads=config.encoder_attention_heads,
+            dropout=config.dropout,
+            attention_dropout=config.attention_dropout,
+            activation_dropout=config.act_dropout,
+            layerdrop=config.layerdrop,
+            encoder_normalize_before=config.encoder_normalize_before,
+            apply_graphormer_init=config.apply_graphormer_init,
+            activation_fn=config.activation_fn,
+            embed_scale=config.embed_scale,
+            dist_head=config.dist_head,
+            sandwich_ln=config.sandwich_ln,
+            # 3D encoder parameters
+            num_dist_head_kernel=config.num_dist_head_kernel,
+            num_edge_types=config.num_edge_types,
         )
 
-        self.share_input_output_embed = args.share_encoder_input_output_embed
+        self.share_input_output_embed = config.share_encoder_input_output_embed
         self.embed_out = None
         self.lm_output_learned_bias = None
 
-        # Remove head is set to true during fine-tuning
-        self.load_softmax = not getattr(args, "remove_head", False)
-
+        # Output layers
         self.masked_lm_pooler = nn.Linear(
-            args.encoder_embed_dim, args.encoder_embed_dim
+            config.encoder_embed_dim, config.encoder_embed_dim
         )
 
         self.lm_head_transform_weight = nn.Linear(
-            args.encoder_embed_dim, args.encoder_embed_dim
+            config.encoder_embed_dim, config.encoder_embed_dim
         )
-        self.activation_fn = utils.get_activation_fn(args.activation_fn)
-        self.layer_norm = LayerNorm(args.encoder_embed_dim)
+        
+        # Activation function
+        if config.activation_fn == "relu":
+            self.activation_fn = F.relu
+        elif config.activation_fn == "gelu":
+            self.activation_fn = F.gelu
+        else:
+            raise NotImplementedError(f"Unknown activation function: {config.activation_fn}")
+            
+        self.layer_norm = nn.LayerNorm(config.encoder_embed_dim)
 
-        self.lm_output_learned_bias = None
-        if self.load_softmax:
-            self.lm_output_learned_bias = nn.Parameter(torch.zeros(1))
-
-            if not self.share_input_output_embed:
-                self.embed_out = nn.Linear(
-                    args.encoder_embed_dim, args.num_classes, bias=False
-                )
-            else:
-                raise NotImplementedError
-        self.sample_weight_estimator = args.sample_weight_estimator
-        self.sample_weight_estimator_pat = args.sample_weight_estimator_pat
-        if args.fingerprint:
-            self.fpnn = nn.Sequential(nn.Linear(2040, args.encoder_embed_dim),
-                                      nn.GELU(),
-                                      nn.Linear(args.encoder_embed_dim, args.encoder_embed_dim))
-            self.reducer = nn.Linear(args.encoder_embed_dim*2, args.encoder_embed_dim)
+        # Output head
+        self.lm_output_learned_bias = nn.Parameter(torch.zeros(1))
+        
+        if not self.share_input_output_embed:
+            self.embed_out = nn.Linear(
+                config.encoder_embed_dim, config.num_classes, bias=False
+            )
+        else:
+            raise NotImplementedError("Shared input-output embeddings not supported")
+            
+        # Sample weight estimator
+        self.sample_weight_estimator = config.sample_weight_estimator
+        self.sample_weight_estimator_pat = config.sample_weight_estimator_pat
+        
+        # Fingerprint network
+        if config.fingerprint:
+            self.fpnn = nn.Sequential(
+                nn.Linear(2040, config.encoder_embed_dim),
+                nn.GELU(),
+                nn.Linear(config.encoder_embed_dim, config.encoder_embed_dim)
+            )
+            self.reducer = nn.Linear(config.encoder_embed_dim * 2, config.encoder_embed_dim)
         else:
             self.fpnn = None
 
     def reset_output_layer_parameters(self):
+        """Reset output layer parameters."""
         self.lm_output_learned_bias = nn.Parameter(torch.zeros(1))
         if self.embed_out is not None:
             self.embed_out.reset_parameters()
 
     def forward(self, batched_data, perturb=None, masked_tokens=None, **unused):
+        """Forward pass through the encoder."""
         inner_states, graph_rep = self.graph_encoder(
             batched_data,
             perturb=perturb,
         )
-        # inner_stats: N x B x H
+        
+        # inner_states: List[Tensor] of shape [seq_len, batch, hidden]
+        # Take the last layer and transpose to [batch, seq_len, hidden]
         x = inner_states[-1].transpose(0, 1)
+        
+        # Apply transformation and layer norm
         x = self.layer_norm(self.activation_fn(self.lm_head_transform_weight(x)))
-        # x: B x N x H
+        
+        # x: [batch, seq_len, hidden]
         if self.fpnn is not None:
-            fpemb = self.fpnn(batched_data["fp"])
-            # fpemb: B x H
-            x = self.reducer(torch.cat([x[:, 0, :].squeeze(dim=1), fpemb], dim=1))
+            # Use fingerprint features
+            fpemb = self.fpnn(batched_data["fp"])  # [batch, hidden]
+            # Combine graph token (first position) with fingerprint
+            x = self.reducer(torch.cat([x[:, 0, :], fpemb], dim=1))
         else:
-            x = x[:, 0, :].squeeze(dim=1)
-        # project back to size of vocabulary
-        if self.share_input_output_embed and hasattr(
-            self.graph_encoder.embed_tokens, "weight"
-        ):
+            # Use only graph token (first position)
+            x = x[:, 0, :]  # [batch, hidden]
+        
+        # Project to output classes
+        if self.share_input_output_embed and hasattr(self.graph_encoder, "embed_tokens"):
             x = F.linear(x, self.graph_encoder.embed_tokens.weight)
         elif self.embed_out is not None:
             x = self.embed_out(x)
+            
+        # Add learned bias
         if self.lm_output_learned_bias is not None:
             x = x + self.lm_output_learned_bias
-        # project masked tokens only
+        
+        # Handle masked tokens (not implemented)
         if masked_tokens is not None:
-            raise NotImplementedError
+            raise NotImplementedError("Masked token prediction not implemented")
 
+        # Sample weight estimation
         if self.sample_weight_estimator:
             weight = torch.ones(x.shape, dtype=x.dtype, device=x.device) * 0.01
             wmask = torch.ones(weight.shape, dtype=torch.bool, device=weight.device)
             wones = torch.ones(weight.shape, dtype=weight.dtype, device=weight.device)
-            for idx, i in enumerate(batched_data['pdbid']):
-                if i.endswith(self.sample_weight_estimator_pat):
+            
+            for idx, pdbid in enumerate(batched_data['pdbid']):
+                if pdbid.endswith(self.sample_weight_estimator_pat):
                     wmask[idx] = False
+                    
             weight = torch.where(wmask, weight, wones)
             return x, weight
+            
         return x
 
-    def max_nodes(self):
-        """Maximum output length supported by the encoder."""
-        return self.max_nodes
 
-    def upgrade_state_dict_named(self, state_dict, name):
-        if not self.load_softmax:
-            for k in list(state_dict.keys()):
-                if "embed_out.weight" in k or "lm_output_learned_bias" in k:
-                    del state_dict[k]
-        return state_dict
+# Configuration builders for different model sizes
+
+def get_base_config() -> GraphormerConfig:
+    """Get base Graphormer configuration."""
+    return GraphormerConfig(
+        dropout=0.1,
+        attention_dropout=0.1,
+        act_dropout=0.0,
+        encoder_ffn_embed_dim=4096,
+        encoder_layers=6,
+        encoder_attention_heads=8,
+        encoder_embed_dim=1024,
+        share_encoder_input_output_embed=False,
+        no_token_positional_embeddings=False,
+        apply_graphormer_init=False,
+        activation_fn="gelu",
+        encoder_normalize_before=True,
+    )
 
 
-@register_model_architecture("graphormer", "graphormer")
+def get_graphormer_base_config() -> GraphormerConfig:
+    """Get Graphormer base configuration."""
+    config = get_base_config()
+    config.encoder_embed_dim = 768
+    config.encoder_layers = 12
+    config.encoder_attention_heads = 32
+    config.encoder_ffn_embed_dim = 768
+    config.activation_fn = "gelu"
+    config.encoder_normalize_before = True
+    config.apply_graphormer_init = False
+    config.share_encoder_input_output_embed = False
+    config.no_token_positional_embeddings = False
+    return config
+
+
+def get_graphormer_slim_config() -> GraphormerConfig:
+    """Get Graphormer slim configuration."""
+    config = get_base_config()
+    config.encoder_embed_dim = 80
+    config.encoder_layers = 12
+    config.encoder_attention_heads = 8
+    config.encoder_ffn_embed_dim = 80
+    config.activation_fn = "gelu"
+    config.encoder_normalize_before = True
+    config.apply_graphormer_init = False
+    config.share_encoder_input_output_embed = False
+    config.no_token_positional_embeddings = False
+    return config
+
+
+def get_graphormer_large_config() -> GraphormerConfig:
+    """Get Graphormer large configuration."""
+    config = get_base_config()
+    config.encoder_embed_dim = 1024
+    config.encoder_layers = 24
+    config.encoder_attention_heads = 32
+    config.encoder_ffn_embed_dim = 1024
+    config.activation_fn = "gelu"
+    config.encoder_normalize_before = True
+    config.apply_graphormer_init = False
+    config.share_encoder_input_output_embed = False
+    config.no_token_positional_embeddings = False
+    return config
+
+
+# Legacy compatibility functions (kept for backward compatibility)
 def base_architecture(args):
+    """Legacy function for setting default args."""
     args.dropout = getattr(args, "dropout", 0.1)
     args.attention_dropout = getattr(args, "attention_dropout", 0.1)
     args.act_dropout = getattr(args, "act_dropout", 0.0)
-
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 4096)
     args.encoder_layers = getattr(args, "encoder_layers", 6)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
-    args.share_encoder_input_output_embed = getattr(
-        args, "share_encoder_input_output_embed", False
-    )
-    args.no_token_positional_embeddings = getattr(
-        args, "no_token_positional_embeddings", False
-    )
-
+    args.share_encoder_input_output_embed = getattr(args, "share_encoder_input_output_embed", False)
+    args.no_token_positional_embeddings = getattr(args, "no_token_positional_embeddings", False)
     args.apply_graphormer_init = getattr(args, "apply_graphormer_init", False)
-
     args.activation_fn = getattr(args, "activation_fn", "gelu")
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-
-
-@register_model_architecture("graphormer", "graphormer_base")
-def graphormer_base_architecture(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 768)
-
-    args.encoder_layers = getattr(args, "encoder_layers", 12)
-
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 32)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 768)
-
-    args.activation_fn = getattr(args, "activation_fn", "gelu")
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-    args.apply_graphormer_init = getattr(args, "apply_graphormer_init", False)
-    args.share_encoder_input_output_embed = getattr(
-            args, "share_encoder_input_output_embed", False
-        )
-    args.no_token_positional_embeddings = getattr(
-        args, "no_token_positional_embeddings", False
-    )
-    base_architecture(args)
-
-
-@register_model_architecture("graphormer", "graphormer_slim")
-def graphormer_slim_architecture(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 80)
-
-    args.encoder_layers = getattr(args, "encoder_layers", 12)
-
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 80)
-
-    args.activation_fn = getattr(args, "activation_fn", "gelu")
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-    args.apply_graphormer_init = getattr(args, "apply_graphormer_init", False)
-    args.share_encoder_input_output_embed = getattr(
-            args, "share_encoder_input_output_embed", False
-        )
-    args.no_token_positional_embeddings = getattr(
-        args, "no_token_positional_embeddings", False
-    )
-    base_architecture(args)
-
-
-@register_model_architecture("graphormer", "graphormer_large")
-def graphormer_large_architecture(args):
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
-
-    args.encoder_layers = getattr(args, "encoder_layers", 24)
-
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 32)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 1024)
-
-    args.activation_fn = getattr(args, "activation_fn", "gelu")
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
-    args.apply_graphormer_init = getattr(args, "apply_graphormer_init", False)
-    args.share_encoder_input_output_embed = getattr(
-            args, "share_encoder_input_output_embed", False
-        )
-    args.no_token_positional_embeddings = getattr(
-        args, "no_token_positional_embeddings", False
-    )
-    base_architecture(args)

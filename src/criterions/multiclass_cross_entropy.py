@@ -1,108 +1,144 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from fairseq.dataclass.configs import FairseqDataclass
-
 import torch
-from torch.nn import functional
-from fairseq import metrics
-from fairseq.criterions import FairseqCriterion, register_criterion
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Dict, Any, Tuple, Optional
+from .l2_loss import BaseCriterion, CriterionOutput
 
 
-@register_criterion("multiclass_cross_entropy", dataclass=FairseqDataclass)
-class GraphPredictionMulticlassCrossEntropy(FairseqCriterion):
+class MulticlassCrossEntropy(BaseCriterion):
     """
-    Implementation for the multi-class log loss used in graphormer model training.
+    Modern PyTorch implementation of Multiclass Cross Entropy for Graphormer model training.
+    Removes Fairseq dependencies while preserving functionality.
     """
-
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
+    
+    def __init__(self):
+        super().__init__()
+        
+    def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
+        """Compute the multiclass cross entropy loss for the given sample.
+        
+        Args:
+            model: The Graphormer model
+            sample: Dictionary containing:
+                - "net_input": Model input data including "batched_data"
+                - "target": Target values
+                - "nsamples": Number of samples in batch
+            reduce: Whether to reduce the loss (legacy compatibility)
+            
+        Returns:
+            CriterionOutput with loss, sample_size, and logging info
         """
         sample_size = sample["nsamples"]
-
+        
+        # Get number of atoms for logging
         with torch.no_grad():
             natoms = sample["net_input"]["batched_data"]["x"].shape[1]
-
+        
+        # Forward pass through model
         logits = model(**sample["net_input"])
+        
+        # Extract the first dimension slice as done in original
         logits = logits[:, 0, :]
-        targets = model.get_targets(sample, [logits])[: logits.size(0)]
+        
+        # Get targets from model (maintains compatibility with different target formats)
+        targets = model.get_targets(sample, [logits])[:logits.size(0)]
+        
+        # Compute accuracy
         ncorrect = (torch.argmax(logits, dim=-1).reshape(-1) == targets.reshape(-1)).sum()
-
-        loss = functional.cross_entropy(
-            logits, targets.reshape(-1), reduction="sum"
+        
+        # Compute cross entropy loss
+        loss = F.cross_entropy(
+            logits, 
+            targets.reshape(-1), 
+            reduction="sum"
         )
-
+        
         logging_output = {
-            "loss": loss.data,
+            "loss": loss.detach(),
             "sample_size": sample_size,
             "nsentences": sample_size,
             "ntokens": natoms,
             "ncorrect": ncorrect,
         }
-        return loss, sample_size, logging_output
-
-    @staticmethod
-    def reduce_metrics(logging_outputs) -> None:
-        """Aggregate logging outputs from data parallel training."""
+        
+        return CriterionOutput(
+            loss=loss,
+            sample_size=sample_size,
+            logging_output=logging_output
+        )
+    
+    def reduce_metrics(self, logging_outputs: list) -> Dict[str, float]:
+        """Aggregate logging outputs from distributed training."""
         loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
-
-        metrics.log_scalar("loss", loss_sum / sample_size, sample_size, round=3)
+        
+        metrics = {
+            "loss": loss_sum / sample_size if sample_size > 0 else 0.0,
+            "sample_size": sample_size,
+        }
+        
+        # Add accuracy if available
         if len(logging_outputs) > 0 and "ncorrect" in logging_outputs[0]:
             ncorrect = sum(log.get("ncorrect", 0) for log in logging_outputs)
-            metrics.log_scalar(
-                "accuracy", 100.0 * ncorrect / sample_size, sample_size, round=1
-            )
-
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
+            metrics["accuracy"] = 100.0 * ncorrect / sample_size if sample_size > 0 else 0.0
+            
+        return metrics
 
 
-@register_criterion("multiclass_cross_entropy_with_flag", dataclass=FairseqDataclass)
-class GraphPredictionMulticlassCrossEntropyWithFlag(GraphPredictionMulticlassCrossEntropy):
+class MulticlassCrossEntropyWithFlag(MulticlassCrossEntropy):
     """
-    Implementation for the multi-class log loss used in graphormer model training.
+    Multiclass cross entropy loss with FLAG adversarial training support.
+    Modern PyTorch implementation without Fairseq dependencies.
     """
-
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
+    
+    def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
+        """Compute the multiclass cross entropy loss with FLAG perturbations.
+        
+        Args:
+            model: The Graphormer model
+            sample: Dictionary containing input data and targets
+            reduce: Whether to reduce the loss (legacy compatibility)
+            
+        Returns:
+            CriterionOutput with loss, sample_size, and logging info
         """
         sample_size = sample["nsamples"]
-        perturb = sample.get("perturb", None)
-
+        perturb = sample.get("perturb", None)  # FLAG perturbations
+        
+        # Get number of atoms for logging
         with torch.no_grad():
             natoms = sample["net_input"]["batched_data"]["x"].shape[1]
-
+            
+        # Forward pass with perturbations
         logits = model(**sample["net_input"], perturb=perturb)
+        
+        # Extract the first dimension slice as done in original
         logits = logits[:, 0, :]
-        targets = model.get_targets(sample, [logits])[: logits.size(0)]
+        
+        # Get targets and compute accuracy
+        targets = model.get_targets(sample, [logits])[:logits.size(0)]
         ncorrect = (torch.argmax(logits, dim=-1).reshape(-1) == targets.reshape(-1)).sum()
-
-        loss = functional.cross_entropy(
-            logits, targets.reshape(-1), reduction="sum"
+        
+        # Compute cross entropy loss
+        loss = F.cross_entropy(
+            logits, 
+            targets.reshape(-1), 
+            reduction="sum"
         )
-
+        
         logging_output = {
-            "loss": loss.data,
+            "loss": loss.detach(),
             "sample_size": sample_size,
             "nsentences": sample_size,
             "ntokens": natoms,
             "ncorrect": ncorrect,
         }
-        return loss, sample_size, logging_output
+        
+        return CriterionOutput(
+            loss=loss,
+            sample_size=sample_size,
+            logging_output=logging_output
+        )

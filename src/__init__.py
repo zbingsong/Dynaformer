@@ -1,9 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-import importlib
-
-
 try:
     import torch
 
@@ -16,5 +13,3 @@ except:
         file=sys.stderr,
         flush=True,
     )
-
-import dynaformer.criterions
