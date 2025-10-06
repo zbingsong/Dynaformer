@@ -1,110 +1,242 @@
-from functools import lru_cache
-
-import ogb
-import numpy as np
+import pickle
 import torch
-from torch.nn import functional as F
-from fairseq.data import data_utils, FairseqDataset, BaseWrapperDataset
-
-from .wrapper import MyPygGraphPropPredDataset
-from .collator import collator
-
-from typing import Optional, Union
-from torch_geometric.data import Data as PYGDataset
-from dgl.data import DGLDataset
-from .pyg_datasets import PYGDatasetLookupTable, GraphormerPYGDataset
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union, Tuple
+from torch.utils.data import Dataset
+from torch_geometric.data import Data, Batch
+import random
 
 
-class BatchedDataDataset(FairseqDataset):
-    def __init__(
-        self, dataset, max_node=128, multi_hop_max_dist=5, spatial_pos_max=1024
-    ):
-        super().__init__()
-        self.dataset = dataset
-        self.max_node = max_node
-        self.multi_hop_max_dist = multi_hop_max_dist
-        self.spatial_pos_max = spatial_pos_max
-
-    def __getitem__(self, index):
-        item = self.dataset[int(index)]
-        return item
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def collater(self, samples):
-        return collator(
-            samples,
-            max_node=self.max_node,
-            multi_hop_max_dist=self.multi_hop_max_dist,
-            spatial_pos_max=self.spatial_pos_max,
-        )
-
-
-class TargetDataset(FairseqDataset):
-    def __init__(self, dataset):
-        super().__init__()
-        self.dataset = dataset
-
-    @lru_cache(maxsize=16)
-    def __getitem__(self, index):
-        return self.dataset[index].y
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def collater(self, samples):
-        return torch.stack(samples, dim=0)
-
-
-class GraphormerDataset:
+class PyGGraphDataset(Dataset):
+    """
+    Modern PyTorch dataset for individual pickled PyG graphs.
+    Supports all 9 splitting methods from bingsong_project.
+    """
+    
     def __init__(
         self,
-        dataset: Optional[Union[PYGDataset, DGLDataset]] = None,
-        dataset_spec: Optional[str] = None,
-        dataset_source: Optional[str] = None,
-        data_path: Optional[str] = None,
-        seed: int = 0,
-        train_idx = None,
-        valid_idx = None,
-        test_idx = None,
+        data_dir: Union[str, Path],
+        data_df: Optional[pd.DataFrame] = None,
+        split_name: str = 'train',
+        split_indices: Optional[List[int]] = None,
+        max_nodes: int = 600,
+        seed: int = 42,
+        graph_suffix: str = ".pkl"
     ):
-        super().__init__()
-        if dataset is not None:
-            if dataset_source == "pyg":
-                self.dataset = GraphormerPYGDataset(dataset, train_idx=train_idx, valid_idx=valid_idx, test_idx=test_idx)
-            else:
-                raise ValueError("customized dataset can only have source pyg")
-        elif dataset_source == "pyg":
-            self.dataset = PYGDatasetLookupTable.GetPYGDataset(dataset_spec, data_path=data_path, seed=seed)
-        else:
-            raise ValueError("customized dataset can only have source pyg")
-        self.setup()
-
-    def setup(self):
-        self.train_idx = self.dataset.train_idx
-        self.valid_idx = self.dataset.valid_idx
-        self.test_idx = self.dataset.test_idx
-
-        self.dataset_train = self.dataset.train_data
-        self.dataset_val = self.dataset.valid_data
-        self.dataset_test = self.dataset.test_data
-
-
-class EpochShuffleDataset(BaseWrapperDataset):
-    def __init__(self, dataset, num_samples, seed):
-        super().__init__(dataset)
-        self.num_samples = num_samples
+        """
+        Initialize dataset from directory of individual pickled PyG graphs.
+        
+        Args:
+            data_dir: Directory containing {protein_id}_{drug_id}.pkl files
+            data_df: Optional DataFrame with protein/drug/y columns for metadata
+            split_name: Which split to use ('train', 'val', 'test', 'test_wt', 'test_mutation')
+            split_indices: Optional list of indices for this split
+            max_nodes: Maximum nodes per graph (filters out larger graphs)
+            seed: Random seed for reproducibility
+            graph_suffix: File extension for graph files
+        """
+        self.data_dir = Path(data_dir)
+        self.data_df = data_df
+        self.split_name = split_name
+        self.max_nodes = max_nodes
         self.seed = seed
-        self.set_epoch(1)
+        self.graph_suffix = graph_suffix
+        
+        # Load all graph files
+        self.graph_files = sorted(list(self.data_dir.glob(f"*{graph_suffix}")))
+        
+        # Apply split indices if provided
+        if split_indices is not None:
+            self.graph_files = [self.graph_files[i] for i in split_indices if i < len(self.graph_files)]
+        
+        # Parse metadata from filenames and DataFrame
+        self._parse_metadata()
+        
+        # Filter graphs by max_nodes
+        self._filter_by_size()
+        
+        print(f"Loaded {len(self.graph_files)} graphs for split '{split_name}' from {self.data_dir}")
+    
+    def _parse_metadata(self):
+        """Extract protein_id, drug_id from filenames and merge with DataFrame info."""
+        self.metadata = []
+        
+        # Create lookup from DataFrame if provided
+        df_lookup = {}
+        if self.data_df is not None:
+            for _, row in self.data_df.iterrows():
+                key = f"{row['protein']}_{row['drug']}"
+                df_lookup[key] = {
+                    'protein_id': row['protein'],
+                    'drug_id': row['drug'],
+                    'y': float(row['y']) if 'y' in row else 0.0
+                }
+        
+        for file_path in self.graph_files:
+            # Parse {protein_id}_{drug_id}.pkl format
+            stem = file_path.stem
+            
+            # Try to match with DataFrame first
+            if stem in df_lookup:
+                meta = df_lookup[stem].copy()
+                meta['filename'] = file_path.name
+                self.metadata.append(meta)
+            else:
+                # Fall back to filename parsing
+                if '_' in stem:
+                    parts = stem.split('_')
+                    if len(parts) >= 2:
+                        protein_id = parts[0]
+                        drug_id = '_'.join(parts[1:])
+                    else:
+                        protein_id, drug_id = stem, "unknown"
+                else:
+                    protein_id, drug_id = stem, "unknown"
+                
+                self.metadata.append({
+                    'protein_id': protein_id,
+                    'drug_id': drug_id,
+                    'filename': file_path.name,
+                    'y': 0.0  # Default target
+                })
+    
+    def _filter_by_size(self):
+        """Filter out graphs exceeding max_nodes."""
+        if self.max_nodes <= 0:
+            return
+        
+        valid_indices = []
+        for i, file_path in enumerate(self.graph_files):
+            try:
+                with open(file_path, 'rb') as f:
+                    graph = pickle.load(f)
+                if hasattr(graph, 'x') and graph.x.size(0) <= self.max_nodes:
+                    valid_indices.append(i)
+                else:
+                    print(f"Filtered out {file_path.name}: {graph.x.size(0) if hasattr(graph, 'x') else 'N/A'} nodes > {self.max_nodes}")
+            except Exception as e:
+                print(f"Error loading {file_path.name}: {e}")
+        
+        self.graph_files = [self.graph_files[i] for i in valid_indices]
+        self.metadata = [self.metadata[i] for i in valid_indices]
+    
+    def __len__(self) -> int:
+        return len(self.graph_files)
+    
+    def __getitem__(self, idx: int) -> Data:
+        """Load and return PyG graph."""
+        file_path = self.graph_files[idx]
+        
+        try:
+            with open(file_path, 'rb') as f:
+                graph = pickle.load(f)
+            
+            # Ensure graph has required attributes
+            if not hasattr(graph, 'x'):
+                raise ValueError(f"Graph {file_path.name} missing node features 'x'")
+            
+            # Add target from metadata if not present
+            if not hasattr(graph, 'y'):
+                graph.y = torch.tensor([self.metadata[idx]['y']], dtype=torch.float)
+            
+            # Add metadata
+            graph.protein_id = self.metadata[idx]['protein_id']
+            graph.drug_id = self.metadata[idx]['drug_id']
+            graph.split_name = self.split_name
+            
+            return graph
+            
+        except Exception as e:
+            print(f"Error loading graph {file_path.name}: {e}")
+            # Return dummy graph as fallback
+            return self._create_dummy_graph()
+    
+    def _create_dummy_graph(self) -> Data:
+        """Create dummy graph for error cases."""
+        return Data(
+            x=torch.zeros(1, 166),  # Standard node feature dim
+            edge_index=torch.zeros(2, 0, dtype=torch.long),
+            edge_attr=torch.zeros(0, 15),
+            pos=torch.zeros(1, 3),
+            y=torch.tensor([0.0]),
+            fingerprint=torch.zeros(2040),  # RF+GB+ECIF features
+            protein_id="dummy",
+            drug_id="dummy",
+            split_name=self.split_name
+        )
+    
+    def get_split_info(self) -> Dict[str, List[str]]:
+        """Get protein and drug IDs for split analysis."""
+        proteins = [meta['protein_id'] for meta in self.metadata]
+        drugs = [meta['drug_id'] for meta in self.metadata]
+        return {'proteins': proteins, 'drugs': drugs}
 
-    def set_epoch(self, epoch):
-        with data_utils.numpy_seed(self.seed + epoch - 1):
-            self.sort_order = np.random.permutation(self.num_samples)
 
-    def ordered_indices(self):
-        return self.sort_order
-
-    @property
-    def can_reuse_epoch_itr_across_epochs(self):
-        return False
+class MultiSplitDataset:
+    """
+    Wrapper class that manages multiple dataset splits.
+    Matches the interface from dataset_GIGN_benchmark_davis_complete.py
+    """
+    
+    def __init__(
+        self,
+        data_dir: Path,
+        data_df: pd.DataFrame,
+        split_method: str,
+        mmseqs_seq_clus_df: Optional[pd.DataFrame] = None,
+        max_nodes: int = 600,
+        seed: int = 42,
+        split_frac: List[float] = [0.7, 0.1, 0.2]
+    ):
+        """
+        Initialize multi-split dataset matching bingsong_project interface.
+        
+        Args:
+            data_dir: Directory containing graph files
+            data_df: DataFrame with protein/drug/y columns  
+            split_method: One of 9 splitting methods
+            mmseqs_seq_clus_df: Required for sequence identity methods
+            max_nodes: Maximum nodes per graph
+            seed: Random seed
+            split_frac: Train/val/test fractions
+        """
+        self.data_dir = data_dir
+        self.data_df = data_df
+        self.split_method = split_method
+        self.mmseqs_seq_clus_df = mmseqs_seq_clus_df
+        self.max_nodes = max_nodes
+        self.seed = seed
+        self.split_frac = split_frac
+        
+        # Import and use DataSplitter
+        from .splits import DataSplitter
+        splitter = DataSplitter(seed=seed)
+        
+        # Create splits
+        self.split_dfs = splitter.split_data(
+            data_df, split_method, mmseqs_seq_clus_df, split_frac
+        )
+        
+        # Create datasets for each split
+        self.datasets = {}
+        for split_name, split_df in self.split_dfs.items():
+            if len(split_df) > 0:  # Only create non-empty datasets
+                self.datasets[split_name] = PyGGraphDataset(
+                    data_dir=data_dir,
+                    data_df=split_df,
+                    split_name=split_name,
+                    max_nodes=max_nodes,
+                    seed=seed
+                )
+    
+    def get_dataset(self, split_name: str) -> PyGGraphDataset:
+        """Get dataset for specific split."""
+        if split_name not in self.datasets:
+            raise ValueError(f"Split '{split_name}' not available. Available splits: {list(self.datasets.keys())}")
+        return self.datasets[split_name]
+    
+    def get_split_sizes(self) -> Dict[str, int]:
+        """Get sizes of all splits."""
+        return {split: len(dataset) for split, dataset in self.datasets.items()}
