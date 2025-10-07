@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 from src.modules import init_graphormer_params, GraphormerGraphEncoder
 
@@ -34,7 +34,7 @@ class GraphormerConfig:
     attention_dropout: float = 0.1
     act_dropout: float = 0.0
     layerdrop: float = 0.0
-    
+
     # Model behavior
     encoder_normalize_before: bool = True
     apply_graphormer_init: bool = False
@@ -51,17 +51,17 @@ class GraphormerConfig:
     num_edge_dis: int = 128
     edge_type: str = "multi_hop"
     multi_hop_max_dist: int = 5
-    
+
     # 3D encoder settings
     dist_head: str = "none"
     num_dist_head_kernel: int = 128
     num_edge_types: int = 512*16
-    
+
     # Additional features
     fingerprint: bool = False
     sample_weight_estimator: bool = False
     sample_weight_estimator_pat: str = "pdbbind"
-    
+
     # Legacy compatibility
     share_encoder_input_output_embed: bool = False
     no_token_positional_embeddings: bool = False
@@ -79,11 +79,9 @@ class GraphormerModel(nn.Module):
         
         if config.apply_graphormer_init:
             self.apply(init_graphormer_params)
-        
-        self.encoder_embed_dim = config.encoder_embed_dim
 
     @classmethod
-    def from_args(cls, args):
+    def from_args(cls, args) -> 'GraphormerModel':
         """Create model from legacy args object for compatibility."""
         config = GraphormerConfig()
         
@@ -91,9 +89,6 @@ class GraphormerModel(nn.Module):
         for field_name in config.__dataclass_fields__:
             if hasattr(args, field_name):
                 setattr(config, field_name, getattr(args, field_name))
-            # Handle args with different names
-            elif hasattr(args, field_name.replace('_', '-')):
-                setattr(config, field_name, getattr(args, field_name.replace('_', '-')))
         
         # Handle special cases
         if hasattr(args, 'tokens_per_sample') and not hasattr(args, 'max_nodes'):
@@ -105,11 +100,18 @@ class GraphormerModel(nn.Module):
         logger.info(f"Created GraphormerModel with config: {config}")
         return cls(config)
 
-    def max_nodes(self):
+    def max_nodes(self) -> int:
         return self.encoder.max_nodes
 
-    def forward(self, batched_data, **kwargs):
-        return self.encoder(batched_data, **kwargs)
+    def forward(
+            self, 
+            batched_data, 
+            perturb: Optional[torch.Tensor]=None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        return self.encoder(
+            batched_data, 
+            perturb=perturb,
+        )
 
     def get_targets(self, sample, net_output):
         """Get targets from sample for compatibility with training."""
@@ -154,10 +156,6 @@ class GraphormerEncoder(nn.Module):
             num_edge_types=config.num_edge_types,
         )
 
-        self.share_input_output_embed = config.share_encoder_input_output_embed
-        self.embed_out = None
-        self.lm_output_learned_bias = None
-
         # Output layers
         self.masked_lm_pooler = nn.Linear(
             config.encoder_embed_dim, config.encoder_embed_dim
@@ -178,14 +176,9 @@ class GraphormerEncoder(nn.Module):
         self.layer_norm = nn.LayerNorm(config.encoder_embed_dim)
 
         # Output head
-        self.lm_output_learned_bias = nn.Parameter(torch.zeros(1))
-        
-        if not self.share_input_output_embed:
-            self.embed_out = nn.Linear(
-                config.encoder_embed_dim, config.num_classes, bias=False
-            )
-        else:
-            raise NotImplementedError("Shared input-output embeddings not supported")
+        self.embed_out = nn.Linear(
+            config.encoder_embed_dim, config.num_classes
+        )
             
         # Sample weight estimator
         self.sample_weight_estimator = config.sample_weight_estimator
@@ -202,13 +195,15 @@ class GraphormerEncoder(nn.Module):
         else:
             self.fpnn = None
 
-    def reset_output_layer_parameters(self):
+    def reset_output_layer_parameters(self) -> None:
         """Reset output layer parameters."""
-        self.lm_output_learned_bias = nn.Parameter(torch.zeros(1))
-        if self.embed_out is not None:
-            self.embed_out.reset_parameters()
+        self.embed_out.reset_parameters()
 
-    def forward(self, batched_data, perturb=None, masked_tokens=None, **unused):
+    def forward(
+            self, 
+            batched_data, 
+            perturb: Optional[torch.Tensor]=None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Forward pass through the encoder."""
         inner_states, graph_rep = self.graph_encoder(
             batched_data,
@@ -233,18 +228,7 @@ class GraphormerEncoder(nn.Module):
             x = x[:, 0, :]  # [batch, hidden]
         
         # Project to output classes
-        if self.share_input_output_embed and hasattr(self.graph_encoder, "embed_tokens"):
-            x = F.linear(x, self.graph_encoder.embed_tokens.weight)
-        elif self.embed_out is not None:
-            x = self.embed_out(x)
-            
-        # Add learned bias
-        if self.lm_output_learned_bias is not None:
-            x = x + self.lm_output_learned_bias
-        
-        # Handle masked tokens (not implemented)
-        if masked_tokens is not None:
-            raise NotImplementedError("Masked token prediction not implemented")
+        x = self.embed_out(x)
 
         # Sample weight estimation
         if self.sample_weight_estimator:

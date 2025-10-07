@@ -40,7 +40,7 @@ class GraphNodeFeature(nn.Module):
         self.graph_token = nn.Embedding(1, hidden_dim)
         self.apply(lambda module: init_params(module, n_layers=n_layers))
 
-    def forward(self, batched_data):
+    def forward(self, batched_data: dict):
         x, in_degree, out_degree = (
             batched_data["x"],
             batched_data["in_degree"],
@@ -48,8 +48,12 @@ class GraphNodeFeature(nn.Module):
         )
         x = batched_data["x"]
         n_graph, n_node = x.size()[:2]
-        # node feauture + graph token
-        node_feature = self.atom_encoder(x).sum(dim=-2)  # [n_graph, n_node, n_hidden]
+        # print("x:", x.size(), x.dtype, x.device)
+        # node feature + graph token
+        node_feature = self.atom_encoder(x)
+        # print("node feature:", node_feature.size(), node_feature.dtype, node_feature.device)
+        node_feature = node_feature.sum(dim=-2)  # [n_graph, n_node, n_hidden]
+        # print("node feature after sum:", node_feature.size(), node_feature.dtype, node_feature.device)
 
         node_feature = (
             node_feature

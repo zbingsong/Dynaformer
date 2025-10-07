@@ -6,7 +6,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Tuple, List
 
 import torch
 import torch.nn as nn
@@ -69,7 +69,6 @@ class GraphormerGraphEncoder(nn.Module):
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
-        traceable: bool = False,
         q_noise: float = 0.0,
         qn_block_size: int = 8,
         dist_head: str = "none",
@@ -83,7 +82,6 @@ class GraphormerGraphEncoder(nn.Module):
         self.layerdrop = layerdrop
         self.embedding_dim = embedding_dim
         self.apply_graphormer_init = apply_graphormer_init
-        self.traceable = traceable
 
         self.graph_node_feature = GraphNodeFeature(
             num_heads=num_attention_heads,
@@ -156,7 +154,7 @@ class GraphormerGraphEncoder(nn.Module):
                     qn_block_size=qn_block_size,
                     sandwich_ln=sandwich_ln,
                 )
-                for i in range(num_encoder_layers)
+                for _ in range(num_encoder_layers)
             ]
         )
 
@@ -203,13 +201,10 @@ class GraphormerGraphEncoder(nn.Module):
         self,
         batched_data,
         perturb=None,
-        last_state_only: bool = False,
-        token_embeddings: Optional[torch.Tensor] = None,
-        attn_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[Union[torch.Tensor, List[torch.Tensor]], torch.Tensor]:
-        is_tpu = False
+    ) -> Tuple[List[torch.Tensor], torch.Tensor]:
         # compute padding mask. This is needed for multi-head attention
         data_x = batched_data["x"]
+        # print("data x:", data_x.size(), data_x.dtype, data_x.device)
         n_graph, n_node = data_x.size()[:2]
         padding_mask = (data_x[:, :, 0]).eq(0)  # B x T x 1
         padding_mask_cls = torch.zeros(
@@ -218,10 +213,7 @@ class GraphormerGraphEncoder(nn.Module):
         padding_mask = torch.cat((padding_mask_cls, padding_mask), dim=1)
         # B x (T+1) x 1
 
-        if token_embeddings is not None:
-            x = token_embeddings
-        else:
-            x = self.graph_node_feature(batched_data)
+        x = self.graph_node_feature(batched_data)
 
         if perturb is not None:
             x[:, 1:, :] += perturb
@@ -250,26 +242,16 @@ class GraphormerGraphEncoder(nn.Module):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
-        inner_states = []
-        if not last_state_only:
-            inner_states.append(x)
+        inner_states = [x]
 
         for layer in self.layers:
             x, _ = layer(
                 x,
                 self_attn_padding_mask=padding_mask,
-                self_attn_mask=attn_mask,
                 self_attn_bias=attn_bias,
             )
-            if not last_state_only:
-                inner_states.append(x)
+            inner_states.append(x)
 
         graph_rep = x[0, :, :]
 
-        if last_state_only:
-            inner_states = [x]
-
-        if self.traceable:
-            return torch.stack(inner_states), graph_rep
-        else:
-            return inner_states, graph_rep
+        return inner_states, graph_rep

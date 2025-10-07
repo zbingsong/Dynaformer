@@ -39,7 +39,7 @@ class DataSplitter:
         
         return {
             'train': data_df.iloc[train_idx],
-            'valid': data_df.iloc[val_idx],
+            'val': data_df.iloc[val_idx],
             'test': data_df.iloc[test_idx],
             'test_wt': pd.DataFrame(),  # Empty for random split
             'test_mutation': pd.DataFrame()
@@ -74,7 +74,7 @@ class DataSplitter:
         
         return {
             'train': train_df,
-            'valid': val_df,
+            'val': val_df,
             'test': test_df,
             'test_wt': pd.DataFrame(),
             'test_mutation': pd.DataFrame()
@@ -129,7 +129,7 @@ class DataSplitter:
         
         return {
             'train': train_df,
-            'valid': val_df,
+            'val': val_df,
             'test': test_df,
             'test_wt': pd.DataFrame(),
             'test_mutation': pd.DataFrame()
@@ -172,7 +172,7 @@ class DataSplitter:
         
         return {
             'train': train_df,
-            'valid': val_df,
+            'val': val_df,
             'test': test_df,
             'test_wt': pd.DataFrame(),
             'test_mutation': pd.DataFrame()
@@ -207,7 +207,7 @@ class DataSplitter:
         
         return {
             'train': wt_df.iloc[train_idx],
-            'valid': wt_df.iloc[val_idx],
+            'val': wt_df.iloc[val_idx],
             'test': pd.DataFrame(),  # No general test set
             'test_wt': wt_df,
             'test_mutation': mutation_df
@@ -244,7 +244,7 @@ class DataSplitter:
         
         return {
             'train': train_df,
-            'valid': val_df,
+            'val': val_df,
             'test': test_df,
             'test_wt': pd.DataFrame(),
             'test_mutation': pd.DataFrame()
@@ -304,7 +304,7 @@ class DataSplitter:
         
         return {
             'train': data_df[data_df['split'] == 'train'],
-            'valid': data_df[data_df['split'] == 'val'],
+            'val': data_df[data_df['split'] == 'val'],
             'test': data_df[data_df['split'] == 'test'],
             'test_wt': pd.DataFrame(),
             'test_mutation': pd.DataFrame()

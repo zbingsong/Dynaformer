@@ -1,3 +1,4 @@
+import os
 import torch
 import pandas as pd
 from torch.utils.data import DataLoader
@@ -7,6 +8,31 @@ from pathlib import Path
 from .dataset import PyGGraphDataset, MultiSplitDataset
 from .splits import DataSplitter
 from .collator import GraphormerCollator
+
+
+def _build_df_from_dir(data_dir: Path) -> pd.DataFrame:
+    """Build a minimal DataFrame with protein, drug, y by parsing filenames <protein>_<drug>.pkl."""
+    rows = []
+    for fp in sorted(Path(data_dir).glob("*.pkl")):
+        stem = fp.stem
+        if "_" in stem:
+            parts = stem.split("_")
+            protein = parts[0]
+            drug = "_".join(parts[1:]) if len(parts) > 1 else "unknown"
+        else:
+            protein, drug = stem, "unknown"
+        # Try reading y from graph if present
+        y_val = 0.0
+        try:
+            import pickle
+            with open(fp, 'rb') as f:
+                g = pickle.load(f)
+            if hasattr(g, 'y') and g.y is not None:
+                y_val = float(g.y[0]) if getattr(g.y, "numel", lambda: 0)() > 0 else float(g.y)
+        except Exception:
+            pass
+        rows.append({"protein": protein, "drug": drug, "y": y_val})
+    return pd.DataFrame(rows)
 
 
 def create_dataloaders_bingsong(
@@ -54,7 +80,7 @@ def create_dataloaders_bingsong(
     # Create dataloaders for each available split
     dataloaders = {}
     
-    for split_name in ['train', 'valid', 'test', 'test_wt', 'test_mutation']:
+    for split_name in ['train', 'val', 'test', 'test_wt', 'test_mutation']:
         try:
             dataset = multi_dataset.get_dataset(split_name)
             if len(dataset) > 0:
@@ -89,105 +115,32 @@ def create_dataloaders(
     seed: int = 42
 ) -> Dict[str, DataLoader]:
     """
-    Create train/val/test dataloaders with modern PyTorch implementation.
-    Legacy interface maintained for backward compatibility.
-    
-    Args:
-        data_dir: Directory containing individual pickled PyG graphs
-        split_type: 'random', 'cold_drug', 'cold_protein', 'seq_identity', 'benchmark'
-        split_params: Additional parameters for splitting
-        batch_size: Batch size for dataloaders
-        max_nodes: Maximum nodes per graph
-        num_workers: Number of worker processes
-        seed: Random seed
-        
-    Returns:
-        Dictionary with 'train', 'val', 'test' dataloaders
+    Backwards-compatible wrapper: build a DataFrame from data_dir and call create_dataloaders_bingsong.
     """
-    # Initialize components
-    splitter = DataSplitter(seed=seed)
-    collator = GraphormerCollator(max_nodes=max_nodes)
-    
-    # Load full dataset to get metadata
-    full_dataset = PyGGraphDataset(data_dir, max_nodes=max_nodes, seed=seed)
-    metadata = full_dataset.metadata
-    
-    # Create splits
-    if split_type == 'random':
-        train_idx, test_idx = splitter.create_fold(
-            len(full_dataset), 
-            n_folds=split_params.get('n_folds', 5),
-            fold_idx=split_params.get('fold_idx', 0)
-        )
-        # Use 10% of train for validation
-        val_size = len(train_idx) // 10
-        val_idx = train_idx[:val_size]
-        train_idx = train_idx[val_size:]
-        
-    elif split_type in ['cold_drug', 'cold_protein']:
-        entity = split_type.split('_')[1]
-        train_idx, test_idx = splitter.create_fold_setting_cold(
-            metadata, entity_type=entity,
-            test_ratio=split_params.get('test_ratio', 0.2)
-        )
-        val_size = len(train_idx) // 10
-        val_idx = train_idx[:val_size]
-        train_idx = train_idx[val_size:]
-        
-    elif split_type == 'seq_identity':
-        train_idx, test_idx = splitter.create_seq_identity_fold(
-            metadata,
-            identity_file=split_params.get('identity_file'),
-            threshold=split_params.get('threshold', 0.5)
-        )
-        val_size = len(train_idx) // 10
-        val_idx = train_idx[:val_size]
-        train_idx = train_idx[val_size:]
-        
-    elif split_type == 'benchmark':
-        splits = splitter.create_benchmark_split(
-            metadata,
-            benchmark_file=split_params.get('benchmark_file')
-        )
-        train_idx, val_idx, test_idx = splits['train'], splits['val'], splits['test']
-        
-    else:
-        raise ValueError(f"Unknown split_type: {split_type}")
-    
-    # Create datasets for each split
-    train_dataset = PyGGraphDataset(data_dir, split_indices=train_idx, max_nodes=max_nodes)
-    val_dataset = PyGGraphDataset(data_dir, split_indices=val_idx, max_nodes=max_nodes)
-    test_dataset = PyGGraphDataset(data_dir, split_indices=test_idx, max_nodes=max_nodes)
-    
-    # Create dataloaders
-    dataloaders = {
-        'train': DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            collate_fn=collator,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        ),
-        'val': DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            shuffle=False, 
-            collate_fn=collator,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        ),
-        'test': DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            collate_fn=collator,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        )
+    split_params = split_params or {}
+    # Map legacy split_type to bingsong split_method
+    split_method_map = {
+        'random': 'random',
+        'cold_drug': 'drug_name',
+        'cold_protein': 'protein_modification',
+        'seq_identity': 'protein_seqid',
+        'benchmark': 'random',  # fallback unless a benchmark file is provided
     }
-    
-    print(f"Created dataloaders - Train: {len(train_dataset)}, "
-          f"Val: {len(val_dataset)}, Test: {len(test_dataset)}")
-    
-    return dataloaders
+    split_method = split_method_map.get(split_type, 'random')
+    data_df = _build_df_from_dir(data_dir)
+    mmseqs_df = split_params.get('identity_file')
+    if isinstance(mmseqs_df, (str, Path)) and Path(mmseqs_df).exists():
+        mmseqs_df = pd.read_csv(mmseqs_df, sep="\t", names=['rep','seq'])
+    else:
+        mmseqs_df = None
+    return create_dataloaders_bingsong(
+        data_dir=data_dir,
+        data_df=data_df,
+        split_method=split_method,
+        mmseqs_seq_clus_df=mmseqs_df,
+        batch_size=batch_size,
+        max_nodes=max_nodes,
+        num_workers=num_workers,
+        seed=seed,
+        split_frac=split_params.get('split_frac', [0.7, 0.1, 0.2])
+    )

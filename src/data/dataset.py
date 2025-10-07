@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple
 from torch.utils.data import Dataset
 from torch_geometric.data import Data, Batch
-import random
+# from .preprocess import preprocess_item
 
 
 class PyGGraphDataset(Dataset):
@@ -46,6 +46,12 @@ class PyGGraphDataset(Dataset):
         
         # Load all graph files
         self.graph_files = sorted(list(self.data_dir.glob(f"*{graph_suffix}")))
+
+        # If a split DataFrame is provided, filter graph files by it
+        if data_df is not None and len(data_df) > 0:
+            # Build allowed stems: protein_drug
+            allowed = set(f"{str(row['protein']).strip()}_{str(row['drug']).strip()}" for _, row in data_df.iterrows())
+            self.graph_files = [fp for fp in self.graph_files if fp.stem in allowed]
         
         # Apply split indices if provided
         if split_indices is not None:
@@ -85,16 +91,11 @@ class PyGGraphDataset(Dataset):
                 self.metadata.append(meta)
             else:
                 # Fall back to filename parsing
-                if '_' in stem:
-                    parts = stem.split('_')
-                    if len(parts) >= 2:
-                        protein_id = parts[0]
-                        drug_id = '_'.join(parts[1:])
-                    else:
-                        protein_id, drug_id = stem, "unknown"
-                else:
-                    protein_id, drug_id = stem, "unknown"
-                
+                # find index of last underscore
+                last_underscore = stem.rfind('_')
+                protein_id = stem[:last_underscore] if last_underscore != -1 else "unknown"
+                drug_id = stem[last_underscore + 1:] if last_underscore != -1 else "unknown"
+
                 self.metadata.append({
                     'protein_id': protein_id,
                     'drug_id': drug_id,
@@ -146,6 +147,7 @@ class PyGGraphDataset(Dataset):
             graph.drug_id = self.metadata[idx]['drug_id']
             graph.split_name = self.split_name
             
+            # graph = preprocess_item(graph)
             return graph
             
         except Exception as e:
@@ -161,7 +163,7 @@ class PyGGraphDataset(Dataset):
             edge_attr=torch.zeros(0, 15),
             pos=torch.zeros(1, 3),
             y=torch.tensor([0.0]),
-            fingerprint=torch.zeros(2040),  # RF+GB+ECIF features
+            fp=torch.zeros(2040),  # RF+GB+ECIF features
             protein_id="dummy",
             drug_id="dummy",
             split_name=self.split_name
