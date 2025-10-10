@@ -1,10 +1,6 @@
 import torch
-import torch.nn.functional as F
-import numpy as np
-from typing import List, Dict, Any, Optional
-from torch_geometric.data import Data, Batch
-from torch_geometric.utils import degree
-from .preprocess import preprocess_item
+from typing import List, Dict, Any
+from torch_geometric.data import Data
 
 
 @torch.jit.script
@@ -167,26 +163,13 @@ class GraphormerCollator:
             raise ValueError("Empty sample list")
         
         # Filter samples exceeding max_nodes
-        original_len = len(items)
-        processed_items = []
-        for i, item in enumerate(items):
-            if item is not None and item.x.size(0) <= self.max_nodes:
-                item.idx = i
-                item.y = item.y.reshape(-1)
-                processed_items.append(preprocess_item(item))
-        filtered_len = len(processed_items)
-        
-        assert filtered_len == original_len, \
-            f"Some samples exceed max_nodes: filtered_len={filtered_len}, original_len={original_len}"
-        
-        # Compute max nodes in this batch
-        max_node_num = max(i.x.size(0) for i in processed_items)
+        max_node_num = max(i.x.size(0) for i in items)
         
         # Extract num_node information
         # num_node = torch.stack([item.num_node for item in items])
         
         # Generate node type edges
-        node_type_edge = gen_node_type_edge(processed_items, max_node_num)
+        node_type_edge = gen_node_type_edge(items, max_node_num)
         
         # Extract all fields from items
         items_tuple = [
@@ -207,7 +190,7 @@ class GraphormerCollator:
                 # item.rmsd_pro if hasattr(item, "rmsd_pro") else 0.0,
                 torch.cat([item.rfscore, item.gbscore, item.ecif]).float() / 100  # 2040-dim
             )
-            for item in processed_items
+            for item in items
         ]
         
         (

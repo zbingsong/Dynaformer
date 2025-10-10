@@ -1,15 +1,12 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
 import torch
 import numpy as np
-import torch_geometric as pyg
 from torch_geometric.utils import to_dense_adj
 from torch_geometric.data import Data
+from typing import Tuple
 
 
 @torch.jit.script
-def convert_to_single_emb(x, offset: int = 512):
+def convert_to_single_emb(x: torch.Tensor, offset: int = 512):
     """Convert multi-dimensional features to single embedding space."""
     feature_num = x.size(1) if len(x.size()) > 1 else 1
     feature_offset = 1 + torch.arange(0, feature_num * offset, offset, dtype=torch.long)
@@ -17,7 +14,7 @@ def convert_to_single_emb(x, offset: int = 512):
     return x
 
 
-def floyd_warshall(adjacency_matrix):
+def floyd_warshall(adjacency_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute shortest paths between all pairs of nodes using Floyd-Warshall algorithm.
     
@@ -59,7 +56,7 @@ def floyd_warshall(adjacency_matrix):
     return M, path
 
 
-def get_all_edges(path, i, j):
+def get_all_edges(path: np.ndarray, i: int, j: int) -> list[int]:
     """Reconstruct path from i to j using intermediate nodes."""
     k = path[i][j]
     if k == -1:
@@ -68,7 +65,7 @@ def get_all_edges(path, i, j):
         return get_all_edges(path, i, k) + [k] + get_all_edges(path, k, j)
 
 
-def gen_edge_input(max_dist, path, edge_feat):
+def gen_edge_input(max_dist: int, path: np.ndarray, edge_feat: np.ndarray) -> np.ndarray:
     """
     Generate edge input features for all shortest paths.
     
@@ -97,7 +94,7 @@ def gen_edge_input(max_dist, path, edge_feat):
     return edge_fea_all
 
 
-def gen_angle_dist(item):
+def gen_angle_dist(item: Data) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Generate angle and distance features for graph.
     
@@ -108,8 +105,8 @@ def gen_angle_dist(item):
         angle: angle features [N, N, n_angle]
         dists: distance features [N, N, n_angle]
     """
-    edge_index = item.edge_index if hasattr(item, 'edge_index') else item['edge_index']
-    pos = item.pos if hasattr(item, 'pos') else item['pos']
+    edge_index: torch.Tensor = item.edge_index if hasattr(item, 'edge_index') else item['edge_index']
+    pos: torch.Tensor = item.pos if hasattr(item, 'pos') else item['pos']
     
     n_node = pos.shape[0]
     dense_adj = to_dense_adj(edge_index, max_num_nodes=n_node).squeeze()
@@ -163,9 +160,9 @@ def preprocess_item(item: Data) -> Data:
             - angle: angle features (if pos available)
             - dists: distance features (if pos available)
     """
-    edge_attr = item.edge_attr
-    edge_index = item.edge_index
-    x = item.x
+    edge_attr: torch.Tensor = item.edge_attr
+    edge_index: torch.Tensor = item.edge_index
+    x: torch.Tensor = item.x
     
     N = x.size(0)
     x = convert_to_single_emb(x)
