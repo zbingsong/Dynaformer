@@ -1,11 +1,14 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-from typing import Callable, Mapping, Sequence, Tuple, Dict, Any
+##########################################
+# !! NOT FULLY CHECKED BECAUSE UNUSED !! #
+##########################################
+
+from typing import Dict, Any, override
 import torch
-from torch import Tensor
-import torch.nn.functional as F
-from .l2_loss import BaseCriterion, CriterionOutput
+import torch.nn as nn
+from .base import BaseCriterion, CriterionOutput
 
 
 class MAEDeltaPos(BaseCriterion):
@@ -22,6 +25,7 @@ class MAEDeltaPos(BaseCriterion):
     d_mean = [0.1353900283575058, 0.06877671927213669, 0.08111362904310226]
     d_std = [1.7862379550933838, 1.78688645362854, 0.8023099899291992]
     
+    @override
     def __init__(self, node_loss_weight: float = 1.0, min_node_loss_weight: float = 0.01, max_update: int = 1000):
         super().__init__()
         self.node_loss_weight = node_loss_weight
@@ -29,11 +33,13 @@ class MAEDeltaPos(BaseCriterion):
         self.max_update = max_update
         self.node_loss_weight_range = max(0, self.node_loss_weight - self.min_node_loss_weight)
         self.num_updates = 0
+        self.loss_fn = nn.L1Loss(reduction="none")
         
-    def set_num_updates(self, num_updates: int):
+    def _set_num_updates(self, num_updates: int):
         """Set the current number of updates for weight scheduling."""
         self.num_updates = num_updates
-        
+    
+    @override
     def forward(self, model, sample: Dict[str, Any], reduce: bool = True) -> CriterionOutput:
         """Compute the MAE deltapos loss for the given sample.
         
@@ -55,7 +61,7 @@ class MAEDeltaPos(BaseCriterion):
         )
         
         # Count valid nodes
-        valid_nodes = sample["net_input"]["atoms"].ne(0).sum()
+        valid_nodes = sample["atoms"].ne(0).sum()
         
         # Forward pass through model
         output, node_output, node_target_mask = model(**sample["net_input"])
@@ -66,7 +72,7 @@ class MAEDeltaPos(BaseCriterion):
         sample_size = relaxed_energy.numel()
         
         # Compute energy loss
-        energy_loss = F.l1_loss(output.float().view(-1), relaxed_energy, reduction="none")
+        energy_loss = self.loss_fn(output.float().view(-1), relaxed_energy)
         with torch.no_grad():
             energy_within_threshold = (energy_loss.detach() * self.e_std < self.e_thresh).sum()
         energy_loss = energy_loss.sum()
@@ -80,7 +86,7 @@ class MAEDeltaPos(BaseCriterion):
         
         # Compute node position loss
         node_loss = (
-            F.l1_loss(node_output.float(), deltapos, reduction="none")
+            self.loss_fn(node_output.float(), deltapos)
             .mean(dim=-1)
             .sum(dim=-1)
             / target_cnt
@@ -105,6 +111,7 @@ class MAEDeltaPos(BaseCriterion):
             logging_output=logging_output
         )
     
+    @override
     def reduce_metrics(self, logging_outputs: list) -> Dict[str, float]:
         """Aggregate logging outputs from distributed training."""
         loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
