@@ -105,7 +105,7 @@ class GraphormerModel(nn.Module):
 
     def forward(
             self, 
-            batched_data, 
+            batched_data: dict[str, torch.Tensor],
             perturb: Optional[torch.Tensor]=None,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         return self.encoder(
@@ -201,7 +201,7 @@ class GraphormerEncoder(nn.Module):
 
     def forward(
             self, 
-            batched_data, 
+            batched_data: dict[str, torch.Tensor], 
             perturb: Optional[torch.Tensor]=None,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         """Forward pass through the encoder."""
@@ -231,17 +231,17 @@ class GraphormerEncoder(nn.Module):
         x = self.embed_out(x)
 
         # Sample weight estimation
-        if self.sample_weight_estimator:
-            weight = torch.ones(x.shape, dtype=x.dtype, device=x.device) * 0.01
-            wmask = torch.ones(weight.shape, dtype=torch.bool, device=weight.device)
-            wones = torch.ones(weight.shape, dtype=weight.dtype, device=weight.device)
+        # if self.sample_weight_estimator:
+        #     weight = torch.ones(x.shape, dtype=x.dtype, device=x.device) * 0.01
+        #     wmask = torch.ones(weight.shape, dtype=torch.bool, device=weight.device)
+        #     wones = torch.ones(weight.shape, dtype=weight.dtype, device=weight.device)
             
-            for idx, pdbid in enumerate(batched_data['pdbid']):
-                if pdbid.endswith(self.sample_weight_estimator_pat):
-                    wmask[idx] = False
+        #     for idx, pdbid in enumerate(batched_data['pdbid']):
+        #         if pdbid.endswith(self.sample_weight_estimator_pat):
+        #             wmask[idx] = False
                     
-            weight = torch.where(wmask, weight, wones)
-            return x, weight
+        #     weight = torch.where(wmask, weight, wones)
+        #     return x, weight
             
         return x
 
@@ -309,20 +309,3 @@ def get_graphormer_large_config() -> GraphormerConfig:
     config.share_encoder_input_output_embed = False
     config.no_token_positional_embeddings = False
     return config
-
-
-# Legacy compatibility functions (kept for backward compatibility)
-def base_architecture(args):
-    """Legacy function for setting default args."""
-    args.dropout = getattr(args, "dropout", 0.1)
-    args.attention_dropout = getattr(args, "attention_dropout", 0.1)
-    args.act_dropout = getattr(args, "act_dropout", 0.0)
-    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 4096)
-    args.encoder_layers = getattr(args, "encoder_layers", 6)
-    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
-    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
-    args.share_encoder_input_output_embed = getattr(args, "share_encoder_input_output_embed", False)
-    args.no_token_positional_embeddings = getattr(args, "no_token_positional_embeddings", False)
-    args.apply_graphormer_init = getattr(args, "apply_graphormer_init", False)
-    args.activation_fn = getattr(args, "activation_fn", "gelu")
-    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)

@@ -9,5 +9,4 @@ from .graphormer import (
     get_graphormer_base_config,
     get_graphormer_slim_config,
     get_graphormer_large_config,
-    base_architecture  # Legacy compatibility
 )
