@@ -45,8 +45,8 @@ class GraphormerGraphEncoderLayer(nn.Module):
 
         # Initialize blocks
         # self.activation_fn = utils.get_activation_fn(activation_fn)
-        self.activation_fn = F.relu if activation_fn == "relu" else F.gelu if activation_fn == "gelu" else None
-        assert self.activation_fn is not None, f"activation_fn {activation_fn} not supported"
+        assert activation_fn in ["relu", "gelu"], f"activation_fn {activation_fn} not supported"
+        self.activation_fn = F.relu if activation_fn == "relu" else F.gelu
         self.self_attn = self.build_self_attention(
             self.embedding_dim,
             num_attention_heads,
