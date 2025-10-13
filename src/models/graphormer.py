@@ -32,8 +32,8 @@ class GraphormerConfig:
     # Dropout settings
     dropout: float = 0.1
     attention_dropout: float = 0.1
-    act_dropout: float = 0.0
-    layerdrop: float = 0.0
+    act_dropout: float = 0.1
+    layerdrop: float = 0.1
 
     # Model behavior
     encoder_normalize_before: bool = True
@@ -58,13 +58,9 @@ class GraphormerConfig:
     num_edge_types: int = 512*16
 
     # Additional features
-    fingerprint: bool = False
+    fingerprint: bool = True
     sample_weight_estimator: bool = False
     sample_weight_estimator_pat: str = "pdbbind"
-
-    # Legacy compatibility
-    share_encoder_input_output_embed: bool = False
-    no_token_positional_embeddings: bool = False
 
 
 class GraphormerModel(nn.Module):
@@ -112,10 +108,6 @@ class GraphormerModel(nn.Module):
             batched_data, 
             perturb=perturb,
         )
-
-    def get_targets(self, sample, net_output):
-        """Get targets from sample for compatibility with training."""
-        return sample["target"]
 
 
 class GraphormerEncoder(nn.Module):
@@ -276,8 +268,8 @@ def get_graphormer_base_config() -> GraphormerConfig:
     config.activation_fn = "gelu"
     config.encoder_normalize_before = True
     config.apply_graphormer_init = False
-    config.share_encoder_input_output_embed = False
-    config.no_token_positional_embeddings = False
+    # config.share_encoder_input_output_embed = False
+    # config.no_token_positional_embeddings = False
     return config
 
 
@@ -291,8 +283,8 @@ def get_graphormer_slim_config() -> GraphormerConfig:
     config.activation_fn = "gelu"
     config.encoder_normalize_before = True
     config.apply_graphormer_init = False
-    config.share_encoder_input_output_embed = False
-    config.no_token_positional_embeddings = False
+    # config.share_encoder_input_output_embed = False
+    # config.no_token_positional_embeddings = False
     return config
 
 
@@ -306,6 +298,6 @@ def get_graphormer_large_config() -> GraphormerConfig:
     config.activation_fn = "gelu"
     config.encoder_normalize_before = True
     config.apply_graphormer_init = False
-    config.share_encoder_input_output_embed = False
-    config.no_token_positional_embeddings = False
+    # config.share_encoder_input_output_embed = False
+    # config.no_token_positional_embeddings = False
     return config
