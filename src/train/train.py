@@ -1,3 +1,5 @@
+from pathlib import Path
+from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,6 +22,8 @@ class TrainingConfig:
     use_amp: bool = True
     log_interval: int = 10
     num_epochs: int = 100
+    checkpoint_dir: Path = Path("checkpoints")
+    results_dir: Path = Path("results")
 
 
 class Trainer:
@@ -48,12 +52,23 @@ class Trainer:
             val_dataloader: DataLoader,
     ):
         """Main training loop"""
+        # use current datetime as suffix for checkpoint directory
         for epoch in range(1, self.config.num_epochs + 1):
             train_stats = self.train_epoch(train_dataloader, epoch)
             logging.info(f"Epoch {epoch} training loss: {train_stats['loss']:.4f}")
             
             val_stats = self.validate(val_dataloader)
             logging.info(f"Epoch {epoch} validation loss: {val_stats['loss']:.4f}")
+
+            if epoch % self.config.log_interval == 0:
+                checkpoint_path = self.config.checkpoint_dir / f"checkpoint_epoch_{epoch}.pt"
+                torch.save({
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'epoch': epoch,
+                    'config': self.config
+                }, checkpoint_path)
+                logging.info(f"Saved checkpoint to {checkpoint_path}")
 
 
     def train_epoch(
@@ -104,7 +119,7 @@ class Trainer:
                 sample_size = criterion_output.sample_size
                 # logging_output = criterion_output.logging_output
 
-            total_loss += loss.item() * sample_size
+            total_loss += loss.item()
             num_samples += sample_size
         
         return {
