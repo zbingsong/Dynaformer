@@ -1,0 +1,46 @@
+model:
+  num_classes: 1
+  max_nodes: 600
+  encoder_layers: 4
+  encoder_attention_heads: 32
+  encoder_embed_dim: 512
+  encoder_ffn_embed_dim: 512
+  attention_dropout: 0.1
+  act_dropout: 0.1
+  dropout: 0.1
+  fingerprint: True
+  dist_head: "gbf3d"
+  num_dist_head_kernel: 256
+  num_edge_types: 16384
+  fp16: True
+training:
+  device: "cuda"
+  criterion: "l2_loss"
+  batch_size: 32
+  epochs: 100
+  lr: 1e-4
+  end_lr: 1e-9
+  lr_scheduler: "polynomial_decay"
+  optimizer: "adam"
+  clip_norm: 5.0
+  warmup_updates: 10
+  patience: 10
+  weight_decay: 0.00001
+  save_interval: 1
+  keep_interval_updates: 1
+  seed: 42
+flag:
+  flag: True
+  flag_m: 3
+  flag_step_size: 0.001
+  flag_mag: 0.01
+data:
+  num_workers: 8
+  data_buffer_size: 20
+  data_dir: "data/sample_data"
+  data_df_path: "data/sample_df.tsv"
+  mmseqs_seq_clus_df_path: "data/davis_complete_id50_cluster.tsv"
+  split_method: "random"
+  split_frac: [0.7, 0.1, 0.2]
+  checkpoint_dir: "checkpoints"
+  results_dir: "results"
