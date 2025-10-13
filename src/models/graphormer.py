@@ -228,7 +228,7 @@ class GraphormerEncoder(nn.Module):
             x = x[:, 0, :]  # [batch, hidden]
         
         # Project to output classes
-        x = self.embed_out(x)
+        x = self.embed_out(x) # shape [batch, num_classes]
 
         # Sample weight estimation
         # if self.sample_weight_estimator:

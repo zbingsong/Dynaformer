@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from torch_geometric.data import Data
 
 
-@torch.jit.script
+# @torch.jit.script
 def convert_to_single_emb(x: torch.Tensor, offset: int = 512) -> torch.Tensor:
     """
     Convert multi-dimensional features to single embedding indices.
@@ -153,8 +153,9 @@ class GraphormerCollator:
         self.max_nodes = max_nodes
         self.multi_hop_max_dist = multi_hop_max_dist
         self.spatial_pos_max = spatial_pos_max
-    
-    def __call__(self, items: List[Data]) -> Dict[str, Any]:
+
+
+    def __call__(self, items: List[Data]) -> Dict[str, torch.Tensor]:
         """
         Collate list of PyG graphs into batched tensors.
         Returns dictionary matching legacy collator output.
@@ -184,7 +185,7 @@ class GraphormerCollator:
                 item.edge_input[:, :, :self.multi_hop_max_dist, :],
                 item.y,
                 item.pos,
-                item.pdbid,
+                # item.pdbid,
                 # item.frame if hasattr(item, "frame") else 0,
                 # item.rmsd_lig if hasattr(item, "rmsd_lig") else 0.0,
                 # item.rmsd_pro if hasattr(item, "rmsd_pro") else 0.0,
@@ -204,7 +205,7 @@ class GraphormerCollator:
             edge_inputs,
             ys,
             poses,
-            pdbids,
+            # pdbids,
             # frames,
             # rmsd_ligs,
             # rmsd_pros,
@@ -250,7 +251,7 @@ class GraphormerCollator:
             edge_input=edge_input,
             y=y,
             pos=pos,
-            pdbid=pdbids,
+            # pdbid=pdbids,
             # frame=frame,
             # num_node=num_node,
             node_type_edge=node_type_edge,

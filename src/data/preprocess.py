@@ -5,7 +5,7 @@ from torch_geometric.data import Data
 from typing import Tuple
 
 
-@torch.jit.script
+# @torch.jit.script
 def convert_to_single_emb(x: torch.Tensor, offset: int = 512):
     """Convert multi-dimensional features to single embedding space."""
     feature_num = x.size(1) if len(x.size()) > 1 else 1

@@ -35,11 +35,14 @@ class PyGGraphDataset(Dataset):
         
         # Load all graph files
         graph_files = sorted(list(self.data_dir.glob(f"*{graph_suffix}")))
+        # print(graph_files)
 
         # If a split DataFrame is provided, filter graph files by it
         if len(data_df) > 0:
             # Build allowed stems: protein_drug
             allowed = set((data_df['protein'].astype(str) + "_" + data_df['drug'].astype(str)).tolist())
+            # print(allowed)
+            # print([fp.stem for fp in graph_files])
             graph_files = [fp for fp in graph_files if fp.stem in allowed]
 
         # Load graphs from pickle files and filter them by max_nodes
@@ -55,7 +58,7 @@ class PyGGraphDataset(Dataset):
         graphs = []
         for i, filename in enumerate(graph_files):
             try:
-                with open(self.data_dir / filename, 'rb') as f:
+                with open(filename, 'rb') as f:
                     graph: Data = pickle.load(f)
                 assert graph.x.size(0) <= self.max_nodes, \
                     f"Graph {filename} has {graph.x.size(0)} nodes > max_nodes {self.max_nodes}"
@@ -117,6 +120,7 @@ class MultiSplitDataset:
 
         splitter = DataSplitter(self.data_df, self.mmseqs_seq_clus_df, seed=seed)
         self.split_indices_dict = splitter.generate_split_indices(split_method, split_frac)
+        print(f"Data splits: " + ", ".join([f"{k}: {len(v)}" for k, v in self.split_indices_dict.items()]))
         
         # Create datasets for each split
         self.datasets = {}

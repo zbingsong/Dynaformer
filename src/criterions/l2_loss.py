@@ -39,14 +39,14 @@ class L2Loss(BaseCriterion):
         natoms = sample["x"].size(0)
         
         # Forward pass through model
-        logits = model(sample, sample.get('perturb', None))
+        logits = model(sample, sample.get('perturb', None)) # logits shape: [batch, num_classes]
         
-        # Handle sample weight estimation (if model returns weights)
-        if isinstance(logits, tuple):
-            # only applies when sample weight estimation is used, which is never the case for us
-            logits, weights = logits
-        else:
-            weights = torch.ones_like(logits, dtype=logits.dtype, device=logits.device)
+        # # Handle sample weight estimation (if model returns weights)
+        # if isinstance(logits, tuple):
+        #     # only applies when sample weight estimation is used, which is never the case for us
+        #     logits, weights = logits
+        # else:
+        #     weights = torch.ones_like(logits, dtype=logits.dtype, device=logits.device)
             
         # Get targets from model (maintains compatibility with different target formats)
         targets = sample["y"]
@@ -55,8 +55,9 @@ class L2Loss(BaseCriterion):
         targets_normalized = (targets - self.target_mean) / self.target_std
         
         # Compute MSE loss with weights
-        loss = self.loss_fn(logits, targets_normalized[:logits.size(0)])
-        loss = (loss * weights).sum()
+        loss = self.loss_fn(logits.squeeze(), targets_normalized[:logits.size(0)])
+        # loss = (loss * weights).sum()
+        loss = loss.sum()
         
         logging_output = {
             "loss": loss.detach(),

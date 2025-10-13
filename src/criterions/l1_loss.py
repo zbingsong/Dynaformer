@@ -41,11 +41,11 @@ class L1Loss(BaseCriterion):
         # Forward pass through model
         logits = model(sample, sample.get('perturb', None))
         
-        # Handle sample weight estimation (if model returns weights)
-        if isinstance(logits, tuple):
-            logits, weights = logits
-        else:
-            weights = torch.ones_like(logits, dtype=logits.dtype, device=logits.device)
+        # # Handle sample weight estimation (if model returns weights)
+        # if isinstance(logits, tuple):
+        #     logits, weights = logits
+        # else:
+        #     weights = torch.ones_like(logits, dtype=logits.dtype, device=logits.device)
             
         # Get targets from model (maintains compatibility with different target formats)
         targets = sample["y"]
@@ -55,7 +55,8 @@ class L1Loss(BaseCriterion):
         
         # Compute MAE loss with weights
         loss = self.loss_fn(logits, targets_normalized[:logits.size(0)])
-        loss = (loss * weights).sum()
+        # loss = (loss * weights).sum()
+        loss = loss.sum()
         
         logging_output = {
             "loss": loss.detach(),

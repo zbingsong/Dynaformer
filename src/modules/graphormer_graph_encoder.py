@@ -199,7 +199,7 @@ class GraphormerGraphEncoder(nn.Module):
 
     def forward(
         self,
-        batched_data,
+        batched_data: dict[str, torch.Tensor],
         perturb=None,
     ) -> Tuple[List[torch.Tensor], torch.Tensor]:
         # compute padding mask. This is needed for multi-head attention
