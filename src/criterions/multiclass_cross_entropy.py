@@ -36,10 +36,10 @@ class MulticlassCrossEntropy(BaseCriterion):
         natoms = sample["x"].size(0)
         
         # Forward pass through model
-        logits = model(sample, sample.get('perturb', None))
+        logits = model(sample, sample.get('perturb', None)) # logits shape: [batch, num_classes]
         
         # Extract the first dimension slice as done in original
-        logits = logits[:, 0, :]
+        logits = logits[:, 0, :] # shape: [batch, num_classes]
         
         # Get targets from model (maintains compatibility with different target formats)
         targets = sample["y"]
@@ -49,7 +49,7 @@ class MulticlassCrossEntropy(BaseCriterion):
         
         # Compute cross entropy loss
         loss = self.loss_fn(
-            logits, 
+            logits.squeeze(1), 
             targets.reshape(-1)
         ).sum()
         logging_output = {

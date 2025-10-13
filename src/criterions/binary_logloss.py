@@ -37,10 +37,10 @@ class BinaryLogLoss(BaseCriterion):
         natoms = sample["x"].size(0)
         
         # Forward pass through model
-        logits = model(sample, sample.get('perturb', None))
+        logits: torch.Tensor = model(sample, sample.get('perturb', None)) # logits shape: [batch, num_classes]
         
         # Extract the first dimension slice as done in original
-        logits = logits[:, 0, :]
+        logits = logits[:, 0, :] # shape: [batch, num_classes]
         
         # Get targets from model (maintains compatibility with different target formats)
         targets = sample["y"]

@@ -1,11 +1,3 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
-
-# Copyright (c) Facebook, Inc. and its affiliates.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
-
 import logging
 import torch
 import torch.nn as nn
@@ -14,8 +6,6 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 from src.modules import init_graphormer_params, GraphormerGraphEncoder
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -77,23 +67,23 @@ class GraphormerModel(nn.Module):
             self.apply(init_graphormer_params)
 
     @classmethod
-    def from_args(cls, args) -> 'GraphormerModel':
+    def from_args(cls, **kwargs) -> 'GraphormerModel':
         """Create model from legacy args object for compatibility."""
         config = GraphormerConfig()
         
         # Map args to config
         for field_name in config.__dataclass_fields__:
-            if hasattr(args, field_name):
-                setattr(config, field_name, getattr(args, field_name))
+            if field_name in kwargs:
+                setattr(config, field_name, kwargs[field_name])
         
         # Handle special cases
-        if hasattr(args, 'tokens_per_sample') and not hasattr(args, 'max_nodes'):
-            config.max_nodes = args.tokens_per_sample
-        
-        if hasattr(args, 'embed_scale') and args.embed_scale > 0:
-            config.embed_scale = args.embed_scale
-            
-        logger.info(f"Created GraphormerModel with config: {config}")
+        if 'tokens_per_sample' in kwargs and 'max_nodes' not in kwargs:
+            config.max_nodes = kwargs['tokens_per_sample']
+
+        if 'embed_scale' in kwargs and kwargs['embed_scale'] > 0:
+            config.embed_scale = kwargs['embed_scale']
+
+        logging.info(f"Created GraphormerModel with config: {config}")
         return cls(config)
 
     def max_nodes(self) -> int:

@@ -39,7 +39,7 @@ class L1Loss(BaseCriterion):
         natoms = sample["x"].size(0)
         
         # Forward pass through model
-        logits = model(sample, sample.get('perturb', None))
+        logits: torch.Tensor = model(sample, sample.get('perturb', None))
         
         # # Handle sample weight estimation (if model returns weights)
         # if isinstance(logits, tuple):
@@ -54,7 +54,7 @@ class L1Loss(BaseCriterion):
         targets_normalized = (targets - self.target_mean) / self.target_std
         
         # Compute MAE loss with weights
-        loss = self.loss_fn(logits, targets_normalized[:logits.size(0)])
+        loss = self.loss_fn(logits.squeeze(1), targets_normalized[:logits.size(0)])
         # loss = (loss * weights).sum()
         loss = loss.sum()
         

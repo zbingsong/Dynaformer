@@ -1,5 +1,6 @@
 import pickle
 import pandas as pd
+import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from torch.utils.data import Dataset
@@ -47,7 +48,7 @@ class PyGGraphDataset(Dataset):
 
         # Load graphs from pickle files and filter them by max_nodes
         self.graphs = self._load_graphs(graph_files)
-        print(f"Loaded {len(graph_files)} graphs for split '{split_name}' from {self.data_dir}")
+        logging.info(f"Loaded {len(graph_files)} graphs for split '{split_name}' from {self.data_dir}")
 
 
     def _load_graphs(self, graph_files) -> List[Data]:
@@ -67,7 +68,7 @@ class PyGGraphDataset(Dataset):
                 graph = preprocess_item(graph)
                 graphs.append(graph)
             except Exception as e:
-                print(f"Error loading {filename}: {e}")
+                logging.error(f"Error loading {filename}: {e}")
                 raise e
 
         return graphs
@@ -120,7 +121,7 @@ class MultiSplitDataset:
 
         splitter = DataSplitter(self.data_df, self.mmseqs_seq_clus_df, seed=seed)
         self.split_indices_dict = splitter.generate_split_indices(split_method, split_frac)
-        print(f"Data splits: " + ", ".join([f"{k}: {len(v)}" for k, v in self.split_indices_dict.items()]))
+        logging.info(f"Data splits: " + ", ".join([f"{k}: {len(v)}" for k, v in self.split_indices_dict.items()]))
         
         # Create datasets for each split
         self.datasets = {}

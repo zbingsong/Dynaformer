@@ -39,7 +39,8 @@ class L2Loss(BaseCriterion):
         natoms = sample["x"].size(0)
         
         # Forward pass through model
-        logits = model(sample, sample.get('perturb', None)) # logits shape: [batch, num_classes]
+        logits: torch.Tensor = model(sample, sample.get('perturb', None)) # logits shape: [batch, num_classes]
+        # print('logits', type(logits), logits.shape, logits.dtype, logits.device)
         
         # # Handle sample weight estimation (if model returns weights)
         # if isinstance(logits, tuple):
@@ -53,11 +54,13 @@ class L2Loss(BaseCriterion):
         
         # Normalize targets using molecular dynamics constants
         targets_normalized = (targets - self.target_mean) / self.target_std
+        # print('targets', type(targets), targets.shape, targets.dtype, targets.device)
         
         # Compute MSE loss with weights
-        loss = self.loss_fn(logits.squeeze(), targets_normalized[:logits.size(0)])
+        loss = self.loss_fn(logits.squeeze(1), targets_normalized[:logits.size(0)])
         # loss = (loss * weights).sum()
-        loss = loss.sum()
+        loss = loss.sum() # loss is now a scalar
+        # print('loss', type(loss), loss.shape, loss.dtype, loss.device)
         
         logging_output = {
             "loss": loss.detach(),

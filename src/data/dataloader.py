@@ -1,3 +1,4 @@
+import logging
 import torch
 from torch.utils.data import DataLoader
 from typing import Optional, Dict, Tuple
@@ -66,8 +67,8 @@ def create_dataloaders(
     
     # Print split information
     split_sizes = multi_dataset.get_split_sizes()
-    print(f"Split method: {split_method}")
+    logging.info(f"Split method: {split_method}")
     for split_name, size in split_sizes.items():
-        print(f"  {split_name}: {size}")
-    
+        logging.info(f"  {split_name}: {size}")
+
     return dataloaders
