@@ -47,7 +47,7 @@ ECIF_LigandAtoms = ['Br;1;1;0;0;0', 'C;3;3;0;1;1', 'C;4;1;1;0;0', 'C;4;1;2;0;0',
                     'S;3;3;0;0;0', 'S;3;3;0;0;1', 'S;4;3;0;0;0', 'S;6;4;0;0;0',
                     'S;6;4;0;0;1', 'S;7;4;0;0;0']
 
-PossibleECIF = [i[0] + "-" + i[1] for i in product(ECIF_ProteinAtoms, ECIF_LigandAtoms)]
+PossibleECIF = [i[0] + "-" + i[1] for i in product(ECIF_ProteinAtoms, ECIF_LigandAtoms)] # length 22 * 70 = 1540
 
 # ### For ELEMENTS
 
@@ -205,16 +205,19 @@ def GetPLPairs(PDB_protein, SDF_ligand, distance_cutoff=6.0):
     for i in ["X", "Y", "Z"]:
         Target = Target[Target[i] < float(Ligand[i].max()) + distance_cutoff]
         Target = Target[Target[i] > float(Ligand[i].min()) - distance_cutoff]
+    # Target length: number of protein atoms in the box (num_prot_atms_box)
 
     # Get all possible pairs
-    Pairs = list(product(Target["ECIF_ATOM_TYPE"], Ligand["ECIF_ATOM_TYPE"]))
+    Pairs = list(product(Target["ECIF_ATOM_TYPE"], Ligand["ECIF_ATOM_TYPE"])) # length num_prot_atms_box * num_ligand_atms
     Pairs = [x[0] + "-" + x[1] for x in Pairs]
     Pairs = pd.DataFrame(Pairs, columns=["ECIF_PAIR"])
-    Distances = cdist(Target[["X", "Y", "Z"]], Ligand[["X", "Y", "Z"]], metric="euclidean")
+    Distances = cdist(Target[["X", "Y", "Z"]], Ligand[["X", "Y", "Z"]], metric="euclidean") # shape (num_prot_atms_box, num_ligand_atms)
     Distances = Distances.reshape(Distances.shape[0] * Distances.shape[1], 1)
     Distances = pd.DataFrame(Distances, columns=["DISTANCE"])
 
     Pairs = pd.concat([Pairs, Distances], axis=1)
+    # For each ligand atom, only consider protein atoms within the distance cutoff from it
+    # Some protein atoms may be in the box but not within the distance cutoff from this ligand atom
     Pairs = Pairs[Pairs["DISTANCE"] <= distance_cutoff].reset_index(drop=True)
     # Pairs from ELEMENTS could be easily obtained froms pairs from ECIF
     Pairs["ELEMENTS_PAIR"] = [x.split("-")[0].split(";")[0] + "-" + x.split("-")[1].split(";")[0] for x in
@@ -229,7 +232,7 @@ def GetPLPairs(PDB_protein, SDF_ligand, distance_cutoff=6.0):
 
 def GetECIF(PDB_protein, SDF_ligand, distance_cutoff=6.0):
     # Main function for the calculation of ECIF
-    Pairs = GetPLPairs(PDB_protein, SDF_ligand, distance_cutoff=distance_cutoff)
+    Pairs = GetPLPairs(PDB_protein, SDF_ligand, distance_cutoff=distance_cutoff) # length num_pairs_within_cutoff
     ECIF = [list(Pairs["ECIF_PAIR"]).count(x) for x in PossibleECIF]
     return ECIF
 

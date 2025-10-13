@@ -83,12 +83,12 @@ def gen_ligpro_edge(dm: np.ndarray, pocket_cutoff: float):
 
 
 def gen_graph(ligand: tuple, pocket: tuple, name: str, protein_cutoff: float, pocket_cutoff: float,
-              spatial_cutoff: float):
+              spatial_cutoff: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     lig_coord, lig_feat, lig_ei, lig_ea = ligand
     pro_coord, pro_feat, pro_ei, pro_ea = pocket
 
     assert len(lig_coord) == len(lig_feat)
-    assert len(pro_coord) == len(pro_coord)
+    assert len(pro_coord) == len(pro_feat)
 
     # new pocket graph based on protein_cutoff (smaller than 10 A)
     assert protein_cutoff >= pocket_cutoff, \

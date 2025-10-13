@@ -1,8 +1,7 @@
-
 from pathlib import Path
 from subprocess import run, DEVNULL
 from rdkit import Chem
-import pymol
+from pymol import cmd
 
 
 def read_mol(mol_file: Path):
@@ -408,19 +407,18 @@ def correct_sanitize_v1(mol: Chem.Mol):
 
 
 def pymol_convert(in_file: Path, out_file: Path):
-    pymol.cmd.reinitialize()
-    pymol.cmd.load(f"{str(in_file)}")
-    # pymol.cmd.remove("hydrogens")
-    pymol.cmd.h_add()
-    pymol.cmd.save(f"{str(out_file)}", "not sol.")
-
+    cmd.reinitialize()
+    cmd.load(f"{str(in_file)}")
+    # cmd.remove("hydrogens")
+    cmd.h_add()
+    cmd.save(f"{str(out_file)}", "not sol.")
 
 def pymol_pocket(receptor_file: Path, ligand_file: Path, pocket_file: Path):
-    pymol.cmd.reinitialize()
-    pymol.cmd.load(f"{str(receptor_file)}", "receptor")
-    pymol.cmd.load(f"{str(ligand_file)}", "ligand")
-    pymol.cmd.select("pocket", "byres (receptor within 10 of ligand)")
-    pymol.cmd.save(f"{str(pocket_file)}", "pocket and not sol.")
+    cmd.reinitialize()
+    cmd.load(f"{str(receptor_file)}", "receptor")
+    cmd.load(f"{str(ligand_file)}", "ligand")
+    cmd.select("pocket", "byres (receptor within 10 of ligand)")
+    cmd.save(f"{str(pocket_file)}", "pocket and not sol.")
 
 
 def obabel_pdb2mol(in_file: Path, out_file: Path):

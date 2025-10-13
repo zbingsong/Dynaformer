@@ -2,7 +2,8 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 import pickle
-from preprocess import gen_feature, gen_graph, to_pyg_graph, get_info, RF_score, GB_score, GetECIF
+from preprocess import gen_feature, gen_graph, to_pyg_graph, get_info, RF_score, GB_score
+from ecif import GetECIF
 from joblib import Parallel, delayed
 from utils import read_mol, obabel_pdb2mol, pymol_pocket
 import numpy as np
@@ -44,8 +45,6 @@ def process_one(proteinpdb: Path, ligandsdf: Path, name: str, pk: float, protein
         return None
     graph = to_pyg_graph(list(raw) + [res['rfscore'], res['gbscore'], res['ecif'], pk, name], frame=-1, rmsd_lig=0.0, rmsd_pro=0.0)
     return graph
-
-
 
 
 if __name__ == "__main__":
