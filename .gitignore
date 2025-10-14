@@ -130,4 +130,6 @@ dmypy.json
 
 .vscode
 data
+example_data
+checkpoints
 !/src/data
