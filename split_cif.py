@@ -227,11 +227,12 @@ def extract_ligand_id(cif_filename: str) -> str:
 
 # ---------- file-level processing (one CIF) ----------
 def process_one_file(
-        method: str, 
+        # method: str, 
         cif_path: Path, 
         outdir: Path, 
+        alt_outdir: Optional[Path]=None,
         template_dir: Optional[Path]=None, 
-        smiles_lookup: Optional[dict[str, str]]=None
+        # smiles_lookup: Optional[dict[str, str]]=None
 ) -> Optional[str]:
     """
     Process a single CIF file: extract protein, ligand(s),
@@ -253,64 +254,79 @@ def process_one_file(
         tmpdir = Path(td)
 
         prot_pdb, ligand_pdb = pymol_extract(cif_path, tmpdir)
+        assert prot_pdb is not None, f"no protein found in {cif_path.name}"
+        assert ligand_pdb is not None, f"no ligand found in {cif_path.name}"
 
         ligand_id = extract_ligand_id(cif_path.name)
-        if method == "smiles":
-            assert smiles_lookup is not None, "smiles_lookup must be provided for smiles method"
-            smiles_str = smiles_lookup.get(ligand_id, None)
-            if smiles_str is None:
-                print(f"missing SMILES for ligand ID {ligand_id}", file=sys.stderr)
-                return cif_path.name
-            if ligand_pdb:
-                out_lig = outdir / f"{base}_ligand.sdf"
-                try:
-                    assign_bonds_from_smiles_robust(smiles_str, ligand_pdb.as_posix(), out_lig.as_posix())
-                except Exception as e:
-                    print("Error processing", base, ":", e, file=sys.stderr)
-                    return cif_path.name
-        elif method == "pymol":
-            assert template_dir is not None, "template_dir must be provided for pymol method"
-            # check template exists
-            template_file_path = template_dir / f"{ligand_id}.sdf"
-            if not template_file_path.exists():
-                print(f"missing template SDF for ligand ID {ligand_id}: {template_file_path}", file=sys.stderr)
-                return cif_path.name
-            # Convert ligand PDB -> SDF with RDKit (add H)
-            # Do this step first because it may fail; upon failure, do not write protein PDB
-            if ligand_pdb:
-                out_lig = outdir / f"{base}_ligand.sdf"
-                try:
-                    rdkit_add_h_and_write_sdf(template_file_path.as_posix(), ligand_pdb.as_posix(), out_lig.as_posix())
-                except Exception as e:
-                    print("Error processing", base, ":", e, file=sys.stderr)
-                    return cif_path.name
-        else:
-            print(f"unknown method: {method}", file=sys.stderr)
+        # if method == "smiles":
+        #     assert smiles_lookup is not None, "smiles_lookup must be provided for smiles method"
+        #     smiles_str = smiles_lookup.get(ligand_id, None)
+        #     if smiles_str is None:
+        #         print(f"missing SMILES for ligand ID {ligand_id}", file=sys.stderr)
+        #         return cif_path.name
+        #     if ligand_pdb:
+        #         out_lig = outdir / f"{base}_ligand.sdf"
+        #         try:
+        #             assign_bonds_from_smiles_robust(smiles_str, ligand_pdb.as_posix(), out_lig.as_posix())
+        #         except Exception as e:
+        #             print("Error processing", base, ":", e, file=sys.stderr)
+        #             return cif_path.name
+        # elif method == "pymol":
+        assert template_dir is not None, "template_dir must be provided for pymol method"
+        # check template exists
+        template_file_path = template_dir / f"{ligand_id}.sdf"
+        if not template_file_path.exists():
+            print(f"missing template SDF for ligand ID {ligand_id}: {template_file_path}", file=sys.stderr)
             return cif_path.name
+        # Convert ligand PDB -> SDF with RDKit (add H)
+        # Do this step first because it may fail; upon failure, do not write protein PDB
+        if ligand_pdb:
+            out_lig = outdir / f"{base}_ligand.sdf"
+            try:
+                rdkit_add_h_and_write_sdf(template_file_path.as_posix(), ligand_pdb.as_posix(), out_lig.as_posix())
+            except Exception as e:
+                print("Error processing", base, ":", e, file=sys.stderr)
+                
+        # else:
+        #     print(f"unknown method: {method}", file=sys.stderr)
+        #     return cif_path.name
             
         # Move protein PDB if present
-        if prot_pdb:
-            out_prot = outdir / f"{base}_protein.pdb"
-            # copy file to outdir
-            shutil.copy(prot_pdb, out_prot)
-            
-    return None  # success
+                if alt_outdir is None:
+                    print("Error: bond assignment failed and no alternative output dir specified", file=sys.stderr)
+                    return cif_path.name
+                out_prot = alt_outdir / f"{base}_protein.pdb"
+                out_lig = alt_outdir / f"{base}_ligand.pdb"
+                shutil.copy(prot_pdb, out_prot)
+                shutil.copy(ligand_pdb, out_lig)
+                return cif_path.name
+
+        out_prot = outdir / f"{base}_protein.pdb"
+        # copy file to outdir
+        shutil.copy(prot_pdb, out_prot)
+        
+        return None  # success
 
 
 # ---------- CLI ----------
 def main():
     ap = argparse.ArgumentParser(description="Split CIF -> protein PDB, ligand/pocket SDF using PyMOL + RDKit")
-    ap.add_argument("--method", "-m", type=str, required=True, choices=["pymol", "smiles"], default="smiles", help="Method to use for processing")
+    # ap.add_argument("--method", "-m", type=str, required=True, choices=["pymol", "smiles"], default="pymol", help="Method to use for processing")
     ap.add_argument("--input_dir", "-i", type=Path, required=True, help="Directory with .cif/.mmcif files")
     # only required if using SMILES-based method
-    ap.add_argument("--smiles_file", "-s", type=Path, required=False, help="CSV file with drug IDs (column name: id) and their SMILES strings (column name: smiles) for smiles mode")
+    # ap.add_argument("--smiles_csv", "-s", type=Path, default=None, help="CSV file with drug IDs (column name: id) and their SMILES strings (column name: smiles) for smiles mode")
     ap.add_argument("--output_dir", "-o", type=Path, required=True, help="Directory to write output files")
-    ap.add_argument("--template_dir", "-t", type=Path, required=False, default=None, help="Directory with template SDF files (named <ligand_id>.sdf) for pymol mode")
-    ap.add_argument('--njobs', '-n', type=int, required=True, default=-1)
+    ap.add_argument("--alternative_output_dir", "-a", type=Path, default=None, help="Directory to write protein and ligand PDBs if bond assignment fails")
+    ap.add_argument("--template_dir", "-t", type=Path, default=None, help="Directory with template SDF files (named <ligand_id>.sdf) for pymol mode")
+    ap.add_argument('--njobs', '-n', type=int, default=-1)
     args = ap.parse_args()
 
     outdir: Path = args.output_dir
     outdir.mkdir(parents=True, exist_ok=True)
+
+    alt_outdir: Optional[Path] = args.alternative_output_dir
+    if alt_outdir:
+        alt_outdir.mkdir(parents=True, exist_ok=True)
 
     # find CIF/mmcif files
     input_dir: Path = args.input_dir
@@ -319,22 +335,22 @@ def main():
         print("No CIF/mmcif files found in", input_dir)
         return
 
-    if args.method == "smiles":
-        if args.smiles_file:
-            smiles_df = pd.read_csv(args.smiles_file)
-            smiles_lookup = dict(zip(smiles_df['id'].astype(str), smiles_df['smiles'].astype(str)))
-        else:
-            print("Error: --smiles_file is required when using --method smiles", file=sys.stderr)
-            return
-    else:
-        smiles_lookup = None  # not used for pymol method
+    # if args.method == "smiles":
+    #     if args.smiles_csv:
+    #         smiles_df = pd.read_csv(args.smiles_csv)
+    #         smiles_lookup = dict(zip(smiles_df['id'].astype(str), smiles_df['smiles'].astype(str)))
+    #     else:
+    #         print("Error: --smiles_csv is required when using --method smiles", file=sys.stderr)
+    #         return
+    # else:
+    #     smiles_lookup = None  # not used for pymol method
 
-    if args.method == "pymol" and not args.template_dir:
-        print("Error: --template_dir is required when using --method pymol", file=sys.stderr)
-        return
+    # if args.method == "pymol" and not args.template_dir:
+    #     print("Error: --template_dir is required when using --method pymol", file=sys.stderr)
+    #     return
 
     # process sequentially here; for multiprocessing, call process_one_file in pool workers
-    results = Parallel(n_jobs=args.njobs)(delayed(process_one_file)(args.method, cif_path, outdir, args.template_dir, smiles_lookup) for cif_path in files)
+    results = Parallel(n_jobs=args.njobs)(delayed(process_one_file)(cif_path, outdir, alt_outdir, args.template_dir) for cif_path in files)
     with open("failed_files.txt", "w") as f:
         for res in results:
             if res is not None:
