@@ -47,8 +47,8 @@ training:
 data:
   num_workers: 8
   data_buffer_size: 2
-  data_dir: "data/sample_pkl"
-  data_df_path: "data/sample_df.tsv"
+  data_dir: "data/pkl"
+  data_df_path: "data/davis_complete_with_smiles.tsv"
   mmseqs_seq_clus_df_path: "data/davis_complete_id50_cluster.tsv"
   split_method: "random"
   split_frac: [0.7, 0.1, 0.2]

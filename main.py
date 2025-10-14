@@ -209,7 +209,7 @@ def main():
         '--mode',
         type=str,
         required=True,
-        choices=['train', 'eval'],
+        choices=['train', 'eval', 'preprocess'],
         default='train',
         help='Mode to run: train or eval'
     )
@@ -236,6 +236,15 @@ def main():
     # Setup logging
     logging.info(f"Configuration loaded from {args.config}")
     logging.info(f"Running in {args.mode} mode")
+
+    if args.mode == 'preprocess':
+        from preprocess.custom_input_individual import preprocess_main
+        preprocess_main(
+            tsv_path=Path(config['data']['data_df_path']),
+            data_dir=Path(config['data'].get('raw_data_dir', './data/boltz')),
+            output_dir=Path(config['data']['data_dir'])
+        )
+        return
 
     # Set random seed for reproducibility
     seed = config['training'].get('seed', 42)
