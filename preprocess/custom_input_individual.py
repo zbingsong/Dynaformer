@@ -11,12 +11,24 @@ from rdkit import RDLogger
 import pandas as pd
 
 
-def process_one(proteinpdb: Path, ligandsdf: Path, name: str, pk: float, protein_cutoff, pocket_cutoff, spatial_cutoff):
+def process_one(
+        proteinpdb: Path, 
+        ligandsdf: Path, 
+        name: str, 
+        pk: float, 
+        output_dir: Path,
+        protein_cutoff: float, 
+        pocket_cutoff: float, 
+        spatial_cutoff: float
+) -> bool:
+    if (output_dir / f'{name}.pkl').is_file():
+        return True  # already processed
+
     RDLogger.DisableLog('rdApp.*')
 
     if not (proteinpdb.is_file() and ligandsdf.is_file()):
         print(f"{proteinpdb} or {ligandsdf} does not exist.")
-        return None
+        return False
     pocketpdb = proteinpdb.parent / (proteinpdb.name.rsplit('.', 1)[0] + '_pocket.pdb')
     pocketsdf = proteinpdb.parent / (proteinpdb.name.rsplit('.', 1)[0] + '_pocket.sdf')
     if not pocketpdb.is_file():
@@ -35,7 +47,7 @@ def process_one(proteinpdb: Path, ligandsdf: Path, name: str, pk: float, protein
     except RuntimeError as e:
         print(proteinpdb, pocketsdf, ligandsdf, "Fail on reading molecule")
         print(e)
-        return None
+        return False
 
     ligand = (res['lc'], res['lf'], res['lei'], res['lea'])
     pocket = (res['pc'], res['pf'], res['pei'], res['pea'])
@@ -43,9 +55,11 @@ def process_one(proteinpdb: Path, ligandsdf: Path, name: str, pk: float, protein
         raw = gen_graph(ligand, pocket, name, protein_cutoff=protein_cutoff, pocket_cutoff=pocket_cutoff, spatial_cutoff=spatial_cutoff)
     except ValueError as e:
         print(f"{name}: Error gen_graph from raw feature {str(e)}")
-        return None
+        return False
     graph = to_pyg_graph(list(raw) + [res['rfscore'], res['gbscore'], res['ecif'], pk, name], frame=-1, rmsd_lig=0.0, rmsd_pro=0.0)
-    return graph
+    with open(output_dir / f'{name}.pkl', 'wb') as f:
+        pickle.dump(graph, f)
+    return True
 
 
 def build_lists(tsv_path: Path, data_dir: Path) -> tuple[list[str], list[str], list[str], list[float]]:
@@ -90,7 +104,8 @@ def build_lists(tsv_path: Path, data_dir: Path) -> tuple[list[str], list[str], l
             msg = f"Missing files for row {idx} ({base_name}): " \
                   f"{'PDB missing' if not pdb_path.exists() else ''} " \
                   f"{'SDF missing' if not sdf_path.exists() else ''}"
-            raise FileNotFoundError(msg)
+            print(msg)
+            continue  # Skip this entry if files are missing
 
         receptors.append(str(pdb_path.resolve()))
         ligands.append(str(sdf_path.resolve()))
@@ -119,12 +134,8 @@ if __name__ == "__main__":
     output_dir: Path = args.output.resolve()
     receptors, ligands, names, pks = build_lists(tsv_path, data_dir)
 
-    graphs = Parallel(n_jobs=args.njobs)(delayed(process_one)(Path(rec), Path(lig), name, pk, args.protein_cutoff, args.pocket_cutoff, args.spatial_cutoff) for rec, lig, name, pk in zip(tqdm(receptors), ligands, names, pks))
+    results = Parallel(n_jobs=args.njobs)(delayed(process_one)(Path(rec), Path(lig), name, pk, output_dir, args.protein_cutoff, args.pocket_cutoff, args.spatial_cutoff) for rec, lig, name, pk in zip(tqdm(receptors), ligands, names, pks))
 
-    for name, graph in zip(names, graphs):
-        if graph is None:
+    for name, result in zip(names, results):
+        if not result:
             print(f"{name} failed.")
-        else:
-            output_path = output_dir / f'{name}.pkl'
-            with open(output_path, 'wb') as f:
-                pickle.dump(graph, f)

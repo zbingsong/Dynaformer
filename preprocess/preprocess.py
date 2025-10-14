@@ -18,7 +18,7 @@ def reindex(atom_idx: list, edge_index: np.ndarray):
     if len(edge_index.shape) != 2:
         return edge_index
     indexmap = {old: new for new, old in enumerate(atom_idx)}
-    mapfunc = np.vectorize(indexmap.get)
+    mapfunc = np.vectorize(indexmap.get, otypes=[int])
     edge_index_new = np.array([mapfunc(edge_index[0]), mapfunc(edge_index[1])])
     return edge_index_new
 

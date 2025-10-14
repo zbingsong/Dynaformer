@@ -96,7 +96,7 @@ def bond_to_feature_vector(bond):
     """
     bond_feature = [
                 safe_index(allowable_features['possible_bond_type_list'], str(bond.GetBondType())),
-                allowable_features['possible_bond_stereo_list'].index(str(bond.GetStereo())),
+                safe_index(allowable_features['possible_bond_stereo_list'], str(bond.GetStereo())),
                 allowable_features['possible_is_conjugated_list'].index(bond.GetIsConjugated()),
             ]
     return bond_feature
