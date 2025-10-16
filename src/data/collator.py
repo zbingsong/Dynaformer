@@ -175,7 +175,7 @@ class GraphormerCollator:
         # Extract all fields from items
         items_tuple = [
             (
-                item.idx,
+                # item.idx,
                 item.attn_bias,
                 item.attn_edge_type,
                 item.spatial_pos,
@@ -195,7 +195,7 @@ class GraphormerCollator:
         ]
         
         (
-            idxs,
+            # idxs,
             attn_biases,
             attn_edge_types,
             spatial_poses,

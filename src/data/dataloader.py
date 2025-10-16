@@ -8,7 +8,7 @@ from .collator import GraphormerCollator
 
 
 def create_dataloaders(
-    data_dir: str,
+    processed_dir: str,
     data_df_path: str,
     mmseqs_seq_clus_df_path: Optional[str]=None,
     split_method: str='random',
@@ -40,7 +40,7 @@ def create_dataloaders(
     
     # Create multi-split dataset
     multi_dataset = MultiSplitDataset(
-        data_dir=data_dir,
+        processed_dir=processed_dir,
         data_df_path=data_df_path,
         mmseqs_seq_clus_df_path=mmseqs_seq_clus_df_path,
         split_method=split_method,

@@ -17,6 +17,17 @@ class DataSplitter(object):
         self.data_df = data_df
         self.mmseqs_seq_clus_df = mmseqs_seq_clus_df
         self.seed = seed
+        self.all_split_methods = [
+            'random', 
+            'drug_name', 
+            'drug_structure', 
+            'protein_modification', 
+            'protein_name', 
+            'protein_modification_drug_name', 
+            'protein_seqid_drug_structure', 
+            'protein_seqid',
+            'wt_mutation'
+        ]
 
     def generate_split_indices(self, split_method: str, split_frac: Tuple[float, float, float]) -> Dict[str, pd.Index]:
         if split_method == 'random':
@@ -35,8 +46,8 @@ class DataSplitter(object):
             split_indices_dict = self.create_seq_identity_drug_tanimoto_fold(self.data_df, self.mmseqs_seq_clus_df, self.seed, split_frac)
         elif split_method == 'protein_seqid':
             split_indices_dict = self.create_seq_identity_fold(self.data_df, self.mmseqs_seq_clus_df, self.seed, split_frac)
-        elif split_method == 'wt_mutation':
-            split_indices_dict = self.create_wt_mutation_split(self.data_df, self.seed, split_frac)
+        elif split_method == 'wt_mutation': # split_frac should be set to (0.9, 0.1, 0.0)
+            split_indices_dict = self.create_wt_mutation_split(self.data_df, self.seed, (0.9, 0.1, 0.0))
         else:
             raise ValueError("Unknown split method: {}".format(split_method))
         return split_indices_dict

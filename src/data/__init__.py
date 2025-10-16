@@ -1,7 +1,8 @@
 from .dataset import PyGGraphDataset, MultiSplitDataset
 from .splits import DataSplitter
 from .collator import GraphormerCollator
-from .dataloader import create_dataloaders, create_dataloaders
+from .dataloader import create_dataloaders
+from .preprocess import preprocess_item
 
 __all__ = [
     'PyGGraphDataset', 
@@ -9,4 +10,5 @@ __all__ = [
     'DataSplitter', 
     'GraphormerCollator',
     'create_dataloaders',
+    'preprocess_item',
 ]

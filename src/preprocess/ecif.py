@@ -157,7 +157,7 @@ def LoadSDFasDF(SDF):
 # In[7]:
 
 
-Atom_Keys = pd.read_csv("PDB_Atom_Keys.csv", sep=",")
+Atom_Keys = pd.read_csv("src/preprocess/PDB_Atom_Keys.csv", sep=",")
 
 
 def LoadPDBasDF(PDB):

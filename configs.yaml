@@ -16,10 +16,9 @@ model:
 training:
   device: "cuda"
   criterion: "l2_loss"
-  batch_size: 32
-  epochs: 5
-  log_interval: 1
-  seed: 42
+  batch_size: 144
+  epochs: 100
+  save_interval: 5
   clip_norm: 5.0
   checkpoint_dir: "checkpoints"
   optimizer:
@@ -34,10 +33,10 @@ training:
     power: 1.0
   amp:
     use_amp: True
-    scaler_init_scale: 16384.0
+    scaler_init_scale: 1024.0
     scaler_growth_factor: 2.0
     scaler_backoff_factor: 0.5
-    scaler_growth_interval: 2000
+    scaler_growth_interval: 1000
   flag:
     flag: True
     flag_m: 3
@@ -46,10 +45,12 @@ training:
 
 data:
   num_workers: 8
-  data_buffer_size: 2
-  data_dir: "data/pkl"
-  data_df_path: "data/davis_complete_with_smiles.tsv"
-  mmseqs_seq_clus_df_path: "data/davis_complete_id50_cluster.tsv"
-  split_method: "random"
+  data_buffer_size: 20
+  data_dir: "/data/bzeng/Dynaformer/data/pkl"
+  data_df_path: "/data/bzeng/Dynaformer/data/davis_complete_with_smiles.tsv"
+  mmseqs_seq_clus_df_path: "/data/bzeng/Dynaformer/data/davis_complete_id50_cluster.tsv"
+  # split_method: "protein_seqid_drug_structure"
   split_frac: [0.7, 0.1, 0.2]
-  
+  seeds: [0, 1, 2, 3, 4]
+  tmp_dir: "/data/bzeng/tmp"
+  processed_dir: "/data/bzeng/Dynaformer/data/processed"

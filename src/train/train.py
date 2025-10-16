@@ -34,7 +34,7 @@ class TrainerConfig:
     flag_config: FlagConfig
     amp_config: AMPConfig
     clip_norm: Optional[float] = None
-    log_interval: int = 10
+    save_interval: int = 10
     num_epochs: int = 100
     checkpoint_dir: Path = Path("checkpoints")
     start_epoch: int = 1
@@ -90,13 +90,15 @@ class Trainer:
             if self.scheduler is not None and train_stats['step_successful']:
                 self.scheduler.step()
 
-            if epoch % self.config.log_interval == 0:
+            if epoch % self.config.save_interval == 0:
                 checkpoint_path = self.config.checkpoint_dir / f"checkpoint_epoch_{epoch}.pt"
                 torch.save({
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
                     'epoch': epoch,
+                    'train_stats': train_stats,
+                    'val_stats': val_stats,
                 }, checkpoint_path)
                 logging.info(f"Saved checkpoint to {checkpoint_path}")
 

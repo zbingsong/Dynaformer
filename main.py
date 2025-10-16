@@ -128,7 +128,7 @@ def train_mode(
         flag_config=FlagConfig(**training_config['flag']),
         amp_config=AMPConfig(**training_config['amp']),
         clip_norm=training_config.get('clip_norm', 0.0),
-        log_interval=training_config.get('log_interval', 10),
+        save_interval=training_config.get('save_interval', 10),
         num_epochs=training_config.get('epochs', 1),
         checkpoint_dir=checkpoint_dir,
         start_epoch=start_epoch
@@ -209,9 +209,9 @@ def main():
         '--mode',
         type=str,
         required=True,
-        choices=['train', 'eval', 'preprocess'],
+        choices=['train', 'eval', 'preprocess1', 'preprocess2', 'preprocess3'],
         default='train',
-        help='Mode to run: train or eval'
+        help='Mode to run: train, eval, preprocess1, preprocess2, preprocess3'
     )
     parser.add_argument(
         '--config',
@@ -225,6 +225,18 @@ def main():
         default=None,
         help='Path to checkpoint directory for continued training or evaluation'
     )
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=0,
+        help='Random seed for reproducibility'
+    )
+    parser.add_argument(
+        '--split',
+        type=str,
+        default='random',
+        help='Data split method for preprocessing'
+    )
     
     args = parser.parse_args()
     if args.mode == 'eval' and args.checkpoint is None:
@@ -237,17 +249,28 @@ def main():
     logging.info(f"Configuration loaded from {args.config}")
     logging.info(f"Running in {args.mode} mode")
 
-    if args.mode == 'preprocess':
-        from preprocess.custom_input_individual import preprocess_main
+    if args.mode == 'preprocess2':
+        from src.preprocess.custom_input_individual import preprocess_main
         preprocess_main(
             tsv_path=Path(config['data']['data_df_path']),
             data_dir=Path(config['data'].get('raw_data_dir', './data/boltz')),
             output_dir=Path(config['data']['data_dir'])
         )
         return
+    
+    if args.mode == 'preprocess3':
+        from src.preprocess import DataPreprocessor
+        data_preprocessor = DataPreprocessor(
+            processed_dir=config['data'].get('processed_dir', './data/processed'),
+            data_dir=config['data'].get('data_dir', './data/boltz'),
+            data_df_path=config['data']['data_df_path'],
+            max_nodes=config['model'].get('max_nodes', 600),
+        )
+        data_preprocessor.generate_datasets()
+        return
 
     # Set random seed for reproducibility
-    seed = config['training'].get('seed', 42)
+    seed = args.seed
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -273,10 +296,10 @@ def main():
     # Create dataloaders
     logging.info("Loading data...")
     dataloader_dict = create_dataloaders(
-        data_dir=config['data']['data_dir'],
+        processed_dir=config['data']['processed_dir'],
         data_df_path=config['data']['data_df_path'],
         mmseqs_seq_clus_df_path=config['data'].get('mmseqs_seq_clus_df_path', None),
-        split_method=config['data']['split_method'],
+        split_method=args.split,
         batch_size=config['training']['batch_size'],
         max_nodes=config['model']['max_nodes'],
         num_workers=config['data']['num_workers'],
@@ -297,5 +320,5 @@ def main():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     main()
