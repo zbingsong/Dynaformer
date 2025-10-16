@@ -77,15 +77,18 @@ class Trainer:
     ):
         """Main training loop"""
         logging.info(f"Starting training, FLAG: {self.config.flag_config.flag}, AMP: {self.config.amp_config.use_amp}")
+        train_losses = []
+        val_losses = []
         # use current datetime as suffix for checkpoint directory
         for epoch in range(self.config.start_epoch, self.config.num_epochs + 1):
             logging.info(f"Starting epoch {epoch}/{self.config.num_epochs}, lr: {self.optimizer.param_groups[0]['lr']:.4e}")
 
             train_stats = self.train_epoch(train_dataloader, epoch)
             logging.info(f"Epoch {epoch} training loss: {train_stats['loss']:.4f}")
-            
+            train_losses.append(train_stats['loss'])
             val_stats = self.validate(val_dataloader)
             logging.info(f"Epoch {epoch} validation loss: {val_stats['loss']:.4f}")
+            val_losses.append(val_stats['loss'])
 
             if self.scheduler is not None and train_stats['step_successful']:
                 self.scheduler.step()
@@ -97,8 +100,8 @@ class Trainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
                     'epoch': epoch,
-                    'train_stats': train_stats,
-                    'val_stats': val_stats,
+                    'train_losses': train_losses,
+                    'val_losses': val_losses,
                 }, checkpoint_path)
                 logging.info(f"Saved checkpoint to {checkpoint_path}")
 

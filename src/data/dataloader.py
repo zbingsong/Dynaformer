@@ -1,10 +1,12 @@
 import logging
 import torch
+import pandas as pd
 from torch.utils.data import DataLoader
 from typing import Optional, Dict, Tuple
 
-from .dataset import MultiSplitDataset
+from .dataset import PyGGraphDataset
 from .collator import GraphormerCollator
+from .splits import DataSplitter
 
 
 def create_dataloaders(
@@ -16,7 +18,8 @@ def create_dataloaders(
     max_nodes: int=512,
     num_workers: int=4,
     seed: int=42,
-    split_frac: Tuple[float, float, float]=(0.7, 0.1, 0.2)
+    split_frac: Tuple[float, float, float]=(0.7, 0.1, 0.2),
+    mode: str='train'
 ) -> Dict[str, DataLoader]:
     """
     Create dataloaders using bingsong_project splitting methods.
@@ -37,25 +40,35 @@ def create_dataloaders(
     """
     # Initialize components
     collator = GraphormerCollator(max_nodes=max_nodes)
+
+    data_df = pd.read_csv(data_df_path, sep='\t')
+    if mmseqs_seq_clus_df_path is not None:
+        mmseqs_seq_clus_df = pd.read_table(mmseqs_seq_clus_df_path, names=['rep', 'seq'])
+    else:
+        mmseqs_seq_clus_df = None
+
+    splitter = DataSplitter(data_df, mmseqs_seq_clus_df, seed=seed)
+    split_indices_dict = splitter.generate_split_indices(split_method, split_frac)
+    logging.info(f"Data splits: " + ", ".join([f"{k}: {len(v)}" for k, v in split_indices_dict.items()]))
     
-    # Create multi-split dataset
-    multi_dataset = MultiSplitDataset(
-        processed_dir=processed_dir,
-        data_df_path=data_df_path,
-        mmseqs_seq_clus_df_path=mmseqs_seq_clus_df_path,
-        split_method=split_method,
-        max_nodes=max_nodes,
-        seed=seed,
-        split_frac=split_frac
-    )
-    
-    # Create dataloaders for each available split
-    dataloaders = {}
-    
-    split_sizes = multi_dataset.get_split_sizes()
-    for split_name, split_size in split_sizes.items():
-        if split_size > 0:
-            dataset = multi_dataset.get_dataset(split_name)
+    if mode == 'train':
+        # Only keep train/valid/test splits
+        split_indices_dict = {k: v for k, v in split_indices_dict.items() if k in {'train', 'valid'}}
+    else:
+        # Only keep test/test_wt/test_mutation splits
+        split_indices_dict = {k: v for k, v in split_indices_dict.items() if k in {'test', 'test_wt', 'test_mutation'}}
+
+    # Create datasets for each split
+    dataloaders: Dict[str, DataLoader] = {}
+    for split_name, split_indices in split_indices_dict.items():
+        if len(split_indices) > 0:  # Only create non-empty datasets
+            dataset = PyGGraphDataset(
+                data_dir=processed_dir,
+                data_df=data_df.iloc[split_indices].reset_index(drop=True),
+                split_name=split_name,
+                max_nodes=max_nodes,
+                graph_suffix=".pkl"
+            )
             dataloaders[split_name] = DataLoader(
                 dataset,
                 batch_size=batch_size,
@@ -66,9 +79,8 @@ def create_dataloaders(
             )
     
     # Print split information
-    split_sizes = multi_dataset.get_split_sizes()
     logging.info(f"Split method: {split_method}")
-    for split_name, size in split_sizes.items():
-        logging.info(f"  {split_name}: {size}")
+    for split_name, dataloader in dataloaders.items():
+        logging.info(f"  {split_name}: {len(dataloader.dataset)} samples")
 
     return dataloaders

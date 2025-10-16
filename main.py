@@ -120,7 +120,8 @@ def train_mode(
         start_epoch = 1
         # Create training config
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        checkpoint_dir = Path(f"{training_config['checkpoint_dir']}/{timestamp}")
+        random_suffix = random.randint(0, 10000)
+        checkpoint_dir = Path(f"{training_config['checkpoint_dir']}/{timestamp}_{random_suffix}")
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Created checkpoint directory at {checkpoint_dir}")
     
@@ -278,15 +279,12 @@ def main():
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-    
+
+    torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
 
     # Set up device
     device = config['training']['device']
-    if device == 'cuda' and not torch.cuda.is_available():
-        logging.warning("CUDA not available, falling back to CPU")
-        device = 'cpu'
-
     # Create model
     logging.info("Initializing model...")
     model = create_model(config['model'])
@@ -305,6 +303,7 @@ def main():
         num_workers=config['data']['num_workers'],
         seed=seed,
         split_frac=config['data'].get('split_frac', (0.7, 0.1, 0.2)),
+        mode=args.mode
     )
     # keys of dataloader_dict: 'train', 'valid', 'test', 'test_wt', 'test_mutation'
     logging.info(f"Train samples: {len(dataloader_dict['train'].dataset)}, Val samples: {len(dataloader_dict['valid'].dataset)}")
