@@ -85,7 +85,8 @@ def train_mode(
         dataloader_dict: Dict[str, DataLoader],
         training_config: Dict[str, Any], 
         checkpoint_dir: Optional[Path]=None,
-        device: str="cpu"
+        timestamp: str="000000_000000",
+        device: str="cuda"
 ) -> None:
     """Training mode entry point"""
     logging.info("Starting training mode...")
@@ -119,9 +120,7 @@ def train_mode(
     else:
         start_epoch = 1
         # Create training config
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        random_suffix = random.randint(0, 10000)
-        checkpoint_dir = Path(f"{training_config['checkpoint_dir']}/{timestamp}_{random_suffix}")
+        checkpoint_dir = Path(f"{training_config['checkpoint_dir']}/{timestamp}")
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Created checkpoint directory at {checkpoint_dir}")
     
@@ -194,13 +193,24 @@ def eval_mode(
     
     # Evaluate on test set
     logging.info("Evaluating on test set...")
-    test_loss = evaluator.evaluate(dataloader_dict['test'])
-    logging.info(f"Test Loss: {test_loss:.4f}")
+    test_statistics = evaluator.evaluate(dataloader_dict['test'])
+    test_wt_statistics = evaluator.evaluate(dataloader_dict.get('test_wt', dataloader_dict['test']))
+    test_mutation_statistics = evaluator.evaluate(dataloader_dict.get('test_mutation', dataloader_dict['test']))
+    logging.info(f"Test Loss: {test_statistics:.4f}")
     
     # Save results
     results_path = checkpoint_dir / 'evaluation_results.txt'
     with open(results_path, 'w') as f:
-        f.write(f"Test Loss: {test_loss:.4f}\n")
+        f.write("Test Loss:\n")
+        for key, value in test_statistics.items():
+            f.write(f"{key}: {value:<.6f}\n")
+        f.write("\nTest WT Statistics:\n")
+        for key, value in test_wt_statistics.items():
+            f.write(f"{key}: {value:<.6f}\n")
+        f.write("\nTest Mutation Statistics:\n")
+        for key, value in test_mutation_statistics.items():
+            f.write(f"{key}: {value:<.6f}\n")
+        f.write("Test evaluation completed successfully.\n")
     logging.info(f"Results saved to {results_path}")
 
 
@@ -243,6 +253,19 @@ def main():
     if args.mode == 'eval' and args.checkpoint is None:
         parser.error("--checkpoint is required in eval mode")
 
+    # Set random seed for reproducibility
+    seed = args.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+    torch.set_default_dtype(torch.float32)
+    torch.set_float32_matmul_precision('high')
+
     # Load configuration
     config = load_config(args.config if args.checkpoint is None else os.path.join(args.checkpoint, 'configs.yaml'))
     # print(type(config['training']['lr']))
@@ -263,25 +286,14 @@ def main():
         from src.preprocess import DataPreprocessor
         data_preprocessor = DataPreprocessor(
             processed_dir=config['data'].get('processed_dir', './data/processed'),
-            data_dir=config['data'].get('data_dir', './data/boltz'),
+            data_dir=config['data'].get('data_dir', './data/pkl'),
             data_df_path=config['data']['data_df_path'],
             max_nodes=config['model'].get('max_nodes', 600),
         )
         data_preprocessor.generate_datasets()
-        return
+        return    
 
-    # Set random seed for reproducibility
-    seed = args.seed
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-
-    torch.set_default_dtype(torch.float32)
-    torch.set_float32_matmul_precision('high')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     # Set up device
     device = config['training']['device']
@@ -310,7 +322,7 @@ def main():
 
     checkpoint_dir = Path(args.checkpoint) if args.checkpoint else None
     if args.mode == 'train':
-        train_mode(model, dataloader_dict, config['training'], checkpoint_dir, device)
+        train_mode(model, dataloader_dict, config['training'], checkpoint_dir, timestamp, device)
     elif args.mode == 'eval':
         assert checkpoint_dir is not None
         eval_mode(model, dataloader_dict, config, checkpoint_dir, device)
