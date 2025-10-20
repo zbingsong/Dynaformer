@@ -15,12 +15,12 @@ for GPU_ID in "${GPU_IDS[@]}"; do
   SCREEN_NAME="dynaformer_train_${GPU_ID}"
   LOG_FILE="train${GPU_ID}.log"
   CONFIG_FILE="configs${GPU_ID}.yaml"
-  COMMAND="CUDA_VISIBLE_DEVICES=$GPU_ID python main.py --mode train --config $CONFIG_FILE --seed $SEED --split protein_seqid > $LOG_FILE 2>&1; exit"
+  COMMAND="CUDA_VISIBLE_DEVICES=$GPU_ID PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python main.py --mode train --config $CONFIG_FILE --seed $SEED --split protein_seqid > $LOG_FILE 2>&1; exit"
 
   echo "Starting training on GPU $GPU_ID (screen: $SCREEN_NAME)..."
 
   screen -dmS "$SCREEN_NAME" bash -c "$COMMAND"
-  sleep 3  # Stagger the startups slightly
+  sleep 10  # Stagger the startups slightly
 done
 
 echo "All trainings launched successfully!"
