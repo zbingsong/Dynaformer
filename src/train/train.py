@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -67,7 +68,9 @@ class Trainer:
         self.update_num = 0
         
         self.config.clip_norm = config.clip_norm if config.clip_norm and config.clip_norm > 0 else None
+        self.max_norm_value_fp16 = 6e4
         self.train_step = self._train_step_with_flag if config.flag_config.flag else self._train_step_standard
+        self.epsilon = 1e-6
 
 
     def train(
@@ -257,6 +260,7 @@ class Trainer:
         step_successful = True
         if self.scaler is not None:
             if self.config.clip_norm:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.max_norm_value_fp16 * self.scaler.get_scale())  # To avoid overflow
                 # Unscale before clipping
                 self.scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.clip_norm)
@@ -267,8 +271,12 @@ class Trainer:
             if scale_after <= scale_before * self.config.amp_config.scaler_backoff_factor:
                 step_successful = False
                 logging.info(f"Update num {self.update_num}: Grad scaler step, scale {scale_before} -> {scale_after}, step failed")
+            if scale_after < 0.5:
+                logging.error('Scale too small, likely have NaN value in forward pass')
+                sys.exit(1)
         else:
             if self.config.clip_norm:
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), self.max_norm_value_fp16)  # To avoid overflow
                 # Unscale before clipping
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.clip_norm)
             self.optimizer.step()
@@ -304,7 +312,7 @@ class Trainer:
             perturb_data_norm = torch.norm(perturb_data, dim=-1, keepdim=False)
             exceed_mask = (perturb_data_norm > self.config.flag_config.flag_mag).to(perturb_data.dtype)
             reweights = (
-                self.config.flag_config.flag_mag / (perturb_data_norm + 1e-8) * exceed_mask + (1 - exceed_mask)
+                self.config.flag_config.flag_mag / (perturb_data_norm + self.epsilon) * exceed_mask + (1 - exceed_mask)
             ).unsqueeze(-1)
             perturb_data *= reweights
         
