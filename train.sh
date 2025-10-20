@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SEED=${1:-0}
+SEEDS=($1)
 GPU_IDS=($2)
 
 NUM_GPUS=${#GPU_IDS[@]}
@@ -9,18 +9,22 @@ if [ "$NUM_GPUS" -gt 8 ]; then
   exit 1
 fi
 
-echo "Launching training with seed=$SEED on GPUs: ${GPU_IDS[*]}"
+# echo "Launching training with seed=$SEED on GPUs: ${GPU_IDS[*]}"
 
-for GPU_ID in "${GPU_IDS[@]}"; do
-  SCREEN_NAME="dynaformer_train_${GPU_ID}"
-  LOG_FILE="train${GPU_ID}.log"
-  CONFIG_FILE="configs${GPU_ID}.yaml"
-  COMMAND="CUDA_VISIBLE_DEVICES=$GPU_ID PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python main.py --mode train --config $CONFIG_FILE --seed $SEED --split protein_seqid > $LOG_FILE 2>&1; exit"
+for (( i=0; i<NUM_GPUS; i++ )); do
+  SEED=${SEEDS[i]}
+  GPU_ID=${GPU_IDS[i]}
+  SCREEN_NAME="dynaformer_${GPU_ID}"
+  LOG_FILE="train_${SEED}.log"
+  CONFIG_FILE="configs.yaml"
+  COMMAND="CUDA_VISIBLE_DEVICES=$GPU_ID PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python main.py --mode train --config $CONFIG_FILE --seed $SEED > $LOG_FILE 2>&1; exit"
 
-  echo "Starting training on GPU $GPU_ID (screen: $SCREEN_NAME)..."
-
+  echo "Starting training on GPU $GPU_ID, random seed $SEED (screen: $SCREEN_NAME)..."
   screen -dmS "$SCREEN_NAME" bash -c "$COMMAND"
-  sleep 10  # Stagger the startups slightly
+
+  if [ $i -lt $((NUM_GPUS-1)) ]; then
+    sleep 10  # Stagger the startups slightly
+  fi
 done
 
 echo "All trainings launched successfully!"

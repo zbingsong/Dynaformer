@@ -83,14 +83,15 @@ def create_scheduler(optimizer: optim.Optimizer, scheduler_config: Dict[str, Any
 def train_mode(
         model: nn.Module, 
         dataloader_dict: Dict[str, DataLoader],
-        training_config: Dict[str, Any], 
+        config: Dict[str, Any], 
         checkpoint_dir: Optional[Path]=None,
         timestamp: str="000000_000000",
         device: str="cuda"
 ) -> None:
     """Training mode entry point"""
     logging.info("Starting training mode...")
-    
+
+    training_config = config['training']
     # Create optimizer
     optimizer = create_optimizer(model, training_config['optimizer'])
     scheduler = create_scheduler(optimizer, training_config['scheduler'])
@@ -146,8 +147,8 @@ def train_mode(
     logging.info("Trainer initialized")
 
     # Save a copy of the config
-    with open(checkpoint_dir / 'config.yaml', 'w') as f:
-        yaml.dump(training_config, f)
+    with open(checkpoint_dir / 'configs.yaml', 'w') as f:
+        yaml.dump(config, f)
     
     # Start training
     logging.info("Starting training loop...")
@@ -166,7 +167,6 @@ def train_mode(
 def eval_mode(
         model: nn.Module,
         dataloader_dict: Dict[str, DataLoader],
-        config: Dict[str, Any], 
         checkpoint_dir: Path,
         device: str="cpu"
 ) -> None:
@@ -178,8 +178,8 @@ def eval_mode(
 
     if checkpoint_path.exists():
         logging.info(f"Loading checkpoint from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint, strict=True)
         logging.info("Checkpoint loaded successfully")
     else:
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
@@ -187,7 +187,6 @@ def eval_mode(
     # Create evaluator
     evaluator = Evaluator(
         model=model,
-        criterion=config['training']['criterion'],
         device=device
     )
     
@@ -196,7 +195,7 @@ def eval_mode(
     test_statistics = evaluator.evaluate(dataloader_dict['test'])
     test_wt_statistics = evaluator.evaluate(dataloader_dict.get('test_wt', dataloader_dict['test']))
     test_mutation_statistics = evaluator.evaluate(dataloader_dict.get('test_mutation', dataloader_dict['test']))
-    logging.info(f"Test Loss: {test_statistics:.4f}")
+    # logging.info(f"Test Loss: {test_statistics:.4f}")
     
     # Save results
     results_path = checkpoint_dir / 'evaluation_results.txt'
@@ -210,7 +209,7 @@ def eval_mode(
         f.write("\nTest Mutation Statistics:\n")
         for key, value in test_mutation_statistics.items():
             f.write(f"{key}: {value:<.6f}\n")
-        f.write("Test evaluation completed successfully.\n")
+        f.write("\nTest evaluation completed successfully.\n")
     logging.info(f"Results saved to {results_path}")
 
 
@@ -242,19 +241,26 @@ def main():
         default=0,
         help='Random seed for reproducibility'
     )
-    parser.add_argument(
-        '--split',
-        type=str,
-        default='random',
-        help='Data split method for preprocessing'
-    )
+    # parser.add_argument(
+    #     '--split',
+    #     type=str,
+    #     default='random',
+    #     help='Data split method for preprocessing'
+    # )
     
     args = parser.parse_args()
     if args.mode == 'eval' and args.checkpoint is None:
         parser.error("--checkpoint is required in eval mode")
 
+    # Load configuration
+    config = load_config(args.config if args.config is not None else os.path.join(args.checkpoint, 'configs.yaml'))
+    # print(type(config['training']['lr']))
+    # Setup logging
+    logging.info(f"Configuration loaded from {args.config}")
+    logging.info(f"Running in {args.mode} mode")
+
     # Set random seed for reproducibility
-    seed = args.seed
+    seed = config['seed'] if 'seed' in config else args.seed
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -265,13 +271,6 @@ def main():
 
     torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
-
-    # Load configuration
-    config = load_config(args.config if args.checkpoint is None else os.path.join(args.checkpoint, 'configs.yaml'))
-    # print(type(config['training']['lr']))
-    # Setup logging
-    logging.info(f"Configuration loaded from {args.config}")
-    logging.info(f"Running in {args.mode} mode")
 
     if args.mode == 'preprocess2':
         from src.preprocess.custom_input_individual import preprocess_main
@@ -304,12 +303,13 @@ def main():
     logging.info(f"Model created")
 
     # Create dataloaders
-    logging.info("Loading data...")
+    split_method = config['data'].get('split_method', 'random')
+    logging.info(f"Loading data with split method '{split_method}'...")
     dataloader_dict = create_dataloaders(
         processed_dir=config['data']['processed_dir'],
         data_df_path=config['data']['data_df_path'],
         mmseqs_seq_clus_df_path=config['data'].get('mmseqs_seq_clus_df_path', None),
-        split_method=args.split,
+        split_method=split_method,
         batch_size=config['training']['batch_size'],
         max_nodes=config['model']['max_nodes'],
         num_workers=config['data']['num_workers'],
@@ -318,14 +318,18 @@ def main():
         mode=args.mode
     )
     # keys of dataloader_dict: 'train', 'valid', 'test', 'test_wt', 'test_mutation'
-    logging.info(f"Train samples: {len(dataloader_dict['train'].dataset)}, Val samples: {len(dataloader_dict['valid'].dataset)}")
+    if args.mode == 'train':
+        config['seed'] = seed
+        logging.info(f"Train samples: {len(dataloader_dict['train'].dataset)}, Val samples: {len(dataloader_dict['valid'].dataset)}")
+    else:
+        logging.info(f"Test samples: {len(dataloader_dict['test'].dataset)}, WT samples: {len(dataloader_dict.get('test_wt', dataloader_dict['test']).dataset)}, Mutation samples: {len(dataloader_dict.get('test_mutation', dataloader_dict['test']).dataset)}")
 
     checkpoint_dir = Path(args.checkpoint) if args.checkpoint else None
     if args.mode == 'train':
-        train_mode(model, dataloader_dict, config['training'], checkpoint_dir, timestamp, device)
+        train_mode(model, dataloader_dict, config, checkpoint_dir, timestamp, device)
     elif args.mode == 'eval':
         assert checkpoint_dir is not None
-        eval_mode(model, dataloader_dict, config, checkpoint_dir, device)
+        eval_mode(model, dataloader_dict, checkpoint_dir, device)
 
     logging.info(f"{args.mode.capitalize()} completed successfully")
 
