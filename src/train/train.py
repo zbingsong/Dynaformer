@@ -122,7 +122,7 @@ class Trainer:
         for batch_idx, sample in enumerate(dataloader):
             loss, sample_size, logging_output, step_successful = self.train_step(sample)
             
-            total_loss += loss.item() # set reduction="none" in criterion already
+            total_loss += loss # set reduction="none" in criterion already
             num_samples += sample_size
 
             # if (batch_idx+1) % self.config.log_interval == 0:
@@ -172,7 +172,7 @@ class Trainer:
         self,
         sample: Dict[str, torch.Tensor],
         # ignore_grad: bool=False
-    ) -> Tuple[torch.Tensor, int, Dict[str, float], bool]:
+    ) -> Tuple[float, int, Dict[str, float], bool]:
         """Standard training step without FLAG"""
         self.update_num += 1
         
@@ -183,14 +183,14 @@ class Trainer:
         loss, sample_size, logging_output = self._forward_and_backward(sample)
         step_successful = self._optimizer_step()
 
-        return loss.detach(), sample_size, logging_output, step_successful
+        return loss.detach().item(), sample_size, logging_output, step_successful
 
 
     def _train_step_with_flag(
         self,
         sample: Dict[str, torch.Tensor],
         # ignore_grad: bool=False
-    ) -> Tuple[torch.Tensor, int, Dict[str, float], bool]:
+    ) -> Tuple[float, int, Dict[str, float], bool]:
         """
         Training step with FLAG (Free Large-scale Adversarial Augmentation on Graphs)
         
@@ -225,12 +225,10 @@ class Trainer:
                 perturb.grad.zero_()
                 sample["perturb"] = perturb
         
-        total_loss += loss.detach()
-        
         # Optimizer step
         step_successful = self._optimizer_step()
-        
-        logging_output["loss"] = total_loss.item()
+
+        logging_output["loss"] = total_loss
         return total_loss, sample_size, logging_output, step_successful
     
 
