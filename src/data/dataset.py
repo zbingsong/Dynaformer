@@ -32,6 +32,7 @@ class PyGGraphDataset(Dataset):
         """
         self.data_dir = Path(data_dir)
         self.data_df = data_df
+        logging.info(f"Dataset initialized with {len(data_df)} entries for split '{split_name}'")
         self.split_name = split_name
         self.max_nodes = max_nodes
         # number of threads for loading graphs
