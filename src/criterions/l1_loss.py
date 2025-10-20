@@ -16,8 +16,8 @@ class L1Loss(BaseCriterion):
     def __init__(self):
         super().__init__()
         # Normalization constants for molecular dynamics data
-        self.target_mean = 6.529300030461668
-        self.target_std = 1.9919705951218716
+        # self.target_mean = 6.529300030461668
+        # self.tar/get_std = 1.9919705951218716
         self.loss_fn = nn.L1Loss(reduction="none")
     
     @override
@@ -51,10 +51,10 @@ class L1Loss(BaseCriterion):
         targets = sample["y"]
         
         # Normalize targets using molecular dynamics constants
-        targets_normalized = (targets - self.target_mean) / self.target_std
+        # targets_normalized = (targets - self.target_mean) / self.target_std
         
         # Compute MAE loss with weights
-        loss = self.loss_fn(logits.squeeze(1), targets_normalized[:logits.size(0)])
+        loss = self.loss_fn(logits.squeeze(1), targets)
         # loss = (loss * weights).sum()
         loss = loss.sum()
         

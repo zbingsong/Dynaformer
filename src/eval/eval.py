@@ -3,20 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from typing import Any, Dict, Union
-from src.criterions import get_criterion
 
 
 class Evaluator:
     def __init__(
             self, 
             model: nn.Module, 
-            criterion: Union[str, nn.Module], 
             device: str="cuda" if torch.cuda.is_available() else "cpu"
     ):
         self.model = model
-        self.target_mean = 6.529300030461668
-        self.target_std = 1.9919705951218716
-        self.criterion = get_criterion(criterion)() if isinstance(criterion, str) else criterion
+        # self.target_mean = 6.529300030461668
+        # self.target_std = 1.9919705951218716
         self.device = device
 
 
@@ -33,8 +30,8 @@ class Evaluator:
 
                 targets = sample["y"]
                 # Normalize targets using molecular dynamics constants
-                targets_normalized = (targets - self.target_mean) / self.target_std
-                all_targets.append(targets_normalized)
+                # targets_normalized = (targets - self.target_mean) / self.target_std
+                all_targets.append(targets)
 
         logits = torch.cat(all_logits, dim=0).squeeze(1) # shape: [total_samples, num_classes]
         targets = torch.cat(all_targets, dim=0) # shape: [total_samples]
