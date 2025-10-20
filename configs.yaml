@@ -46,6 +46,7 @@ training:
 data:
   num_workers: 8
   data_buffer_size: 20
+  raw_data_dir: "/data/bzeng/Dynaformer/data/boltz_failed"
   data_dir: "/data/bzeng/Dynaformer/data/pkl"
   data_df_path: "/data/bzeng/Dynaformer/data/davis_complete_with_smiles.tsv"
   mmseqs_seq_clus_df_path: "/data/bzeng/Dynaformer/data/davis_complete_id50_cluster.tsv"
