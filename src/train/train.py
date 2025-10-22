@@ -49,6 +49,8 @@ class Trainer:
         config: TrainerConfig,
         optimizer: optim.Optimizer,
         scheduler: Optional[optim.lr_scheduler.LRScheduler]=None,
+        existing_train_losses: Optional[list]=None,
+        existing_val_losses: Optional[list]=None,
         device: str="cuda" if torch.cuda.is_available() else "cpu"
     ):
         self.model = model
@@ -71,6 +73,14 @@ class Trainer:
         self.max_norm_value_fp16 = 6e4
         self.train_step = self._train_step_with_flag if config.flag_config.flag else self._train_step_standard
         self.epsilon = 1e-6
+        if existing_train_losses is not None:
+            self.train_losses = existing_train_losses
+        else:
+            self.train_losses = []
+        if existing_val_losses is not None:
+            self.val_losses = existing_val_losses
+        else:
+            self.val_losses = []
 
 
     def train(
@@ -80,18 +90,16 @@ class Trainer:
     ):
         """Main training loop"""
         logging.info(f"Starting training, FLAG: {self.config.flag_config.flag}, AMP: {self.config.amp_config.use_amp}")
-        train_losses = []
-        val_losses = []
         # use current datetime as suffix for checkpoint directory
         for epoch in range(self.config.start_epoch, self.config.num_epochs + 1):
             logging.info(f"Starting epoch {epoch}/{self.config.num_epochs}, lr: {self.optimizer.param_groups[0]['lr']:.4e}")
 
             train_stats = self.train_epoch(train_dataloader, epoch)
             logging.info(f"Epoch {epoch} training loss: {train_stats['loss']:.4f}")
-            train_losses.append(train_stats['loss'])
+            self.train_losses.append(train_stats['loss'])
             val_stats = self.validate(val_dataloader)
             logging.info(f"Epoch {epoch} validation loss: {val_stats['loss']:.4f}")
-            val_losses.append(val_stats['loss'])
+            self.val_losses.append(val_stats['loss'])
 
             if self.scheduler is not None and train_stats['step_successful']:
                 self.scheduler.step()
@@ -103,8 +111,8 @@ class Trainer:
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
                     'epoch': epoch,
-                    'train_losses': train_losses,
-                    'val_losses': val_losses,
+                    'train_losses': self.train_losses,
+                    'val_losses': self.val_losses,
                 }, checkpoint_path)
                 logging.info(f"Saved checkpoint to {checkpoint_path}")
 

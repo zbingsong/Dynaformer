@@ -109,13 +109,16 @@ def train_mode(
         if checkpoint_list:
             checkpoint_path = max(checkpoint_list, key=lambda p: int(p.stem.split("_")[-1]))
             logging.info(f"Loading checkpoint from {checkpoint_path}")
-            checkpoint = torch.load(checkpoint_path, map_location=device)
-            model.load_state_dict(checkpoint['model_state_dict'])
+            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+            model.load_state_dict(checkpoint['model_state_dict'], strict=True)
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             if scheduler and checkpoint['scheduler_state_dict'] is not None:
                 scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start_epoch = checkpoint.get('epoch', 1) + 1
+            existing_train_losses = checkpoint.get('train_losses', [])
+            existing_val_losses = checkpoint.get('val_losses', [])
             logging.info(f"Resuming training from epoch {start_epoch}")
+            del checkpoint
         else:
             raise FileNotFoundError(f"No checkpoint found at {checkpoint_dir}")
     else:
@@ -123,13 +126,15 @@ def train_mode(
         # Create training config
         checkpoint_dir = Path(f"{training_config['checkpoint_dir']}/{timestamp}")
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        existing_train_losses = None
+        existing_val_losses = None
         logging.info(f"Created checkpoint directory at {checkpoint_dir}")
     
     trainer_config = TrainerConfig(
         flag_config=FlagConfig(**training_config['flag']),
         amp_config=AMPConfig(**training_config['amp']),
-        clip_norm=training_config.get('clip_norm', 0.0),
-        save_interval=training_config.get('save_interval', 10),
+        clip_norm=training_config.get('clip_norm', 5.0),
+        save_interval=training_config.get('save_interval', 5),
         num_epochs=training_config.get('epochs', 1),
         checkpoint_dir=checkpoint_dir,
         start_epoch=start_epoch
@@ -142,6 +147,8 @@ def train_mode(
         config=trainer_config,
         optimizer=optimizer,
         scheduler=scheduler,
+        existing_train_losses=existing_train_losses,
+        existing_val_losses=existing_val_losses,
         device=device
     )
     logging.info("Trainer initialized")
