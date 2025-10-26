@@ -123,7 +123,7 @@ class PyGGraphDataset(Dataset):
                     # skip None results
                     if graph is not None:
                         results[idx] = graph
-                    if (i + 1) % 500 == 0 or (i + 1) == len(graph_files):
+                    if (i + 1) % 1000 == 0 or (i + 1) == len(graph_files):
                         logging.info(f"Loaded {i + 1}/{len(graph_files)} graphs on split '{self.split_name}'")
             except KeyboardInterrupt:
                 logging.error("KeyboardInterrupt received, terminating loading.")
