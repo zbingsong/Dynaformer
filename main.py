@@ -18,7 +18,7 @@ from src.train.train import Trainer, TrainerConfig, AMPConfig, FlagConfig
 from src.eval.eval import Evaluator
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str | Path) -> Dict[str, Any]:
     """Load configuration from YAML file"""
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -57,25 +57,17 @@ def create_scheduler(optimizer: optim.Optimizer, scheduler_config: Dict[str, Any
     if scheduler_name is None:
         return None
     
-    warmup_updates = scheduler_config.get('warmup_updates', 0)
-    warmup_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_updates) if warmup_updates > 0 else None
-    if scheduler_name == 'step':
-        step_size = scheduler_config.get('step_size', 10)
-        gamma = scheduler_config.get('gamma', 0.1)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
-    elif scheduler_name == 'exponential':
-        gamma = scheduler_config.get('gamma', 0.95)
-        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
-    elif scheduler_name == 'polynomial_decay':
-        total_iters = scheduler_config.get('epochs', 100) - warmup_updates
-        scheduler = optim.lr_scheduler.PolynomialLR(optimizer, total_iters=total_iters, power=scheduler_config.get('power', 1.0), last_epoch=-1)
-    else:
-        raise ValueError(f"Unknown scheduler: {scheduler_name}")
-    
+    warmup_updates = scheduler_config.get('warmup_updates', 10)
+    warmup_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, total_iters=warmup_updates)
+    total_iters = scheduler_config.get('epochs', 100) - warmup_updates
+    mid_iters = min(90, total_iters)
+    mid_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.0, total_iters=mid_iters)
+    # final_scheduler = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.01, end_factor=0.0, total_iters=max(0, total_iters - mid_iters))
+
     scheduler = optim.lr_scheduler.SequentialLR(
         optimizer,
-        schedulers=[warmup_scheduler, scheduler] if warmup_scheduler else [scheduler],
-        milestones=[warmup_updates] if warmup_scheduler else []
+        schedulers=[warmup_scheduler, mid_scheduler],
+        milestones=[warmup_updates]
     )
     return scheduler
 
@@ -84,7 +76,7 @@ def train_mode(
         model: nn.Module, 
         dataloader_dict: Dict[str, DataLoader],
         config: Dict[str, Any], 
-        checkpoint_dir: Optional[Path]=None,
+        checkpoint_path: Optional[Path]=None,
         timestamp: str="000000_000000",
         device: str="cuda"
 ) -> None:
@@ -103,11 +95,8 @@ def train_mode(
         logging.info("No scheduler used")
 
     # Load checkpoint if provided
-    if checkpoint_dir is not None and checkpoint_dir.exists():
-        # Find latest checkpoint (format: checkpoint_epoch_{epoch}.pt)
-        checkpoint_list = list(checkpoint_dir.glob("checkpoint_epoch_*.pt"))
-        if checkpoint_list:
-            checkpoint_path = max(checkpoint_list, key=lambda p: int(p.stem.split("_")[-1]))
+    if checkpoint_path is not None:
+        if checkpoint_path.exists():
             logging.info(f"Loading checkpoint from {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
             model.load_state_dict(checkpoint['model_state_dict'], strict=True)
@@ -119,8 +108,9 @@ def train_mode(
             existing_val_losses = checkpoint.get('val_losses', [])
             logging.info(f"Resuming training from epoch {start_epoch}")
             del checkpoint
+            checkpoint_dir = checkpoint_path.parent
         else:
-            raise FileNotFoundError(f"No checkpoint found at {checkpoint_dir}")
+            raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
     else:
         start_epoch = 1
         # Create training config
@@ -174,23 +164,23 @@ def train_mode(
 def eval_mode(
         model: nn.Module,
         dataloader_dict: Dict[str, DataLoader],
-        checkpoint_dir: Path,
+        checkpoint_path: Path,
         device: str="cpu"
 ) -> None:
     """Evaluation mode entry point"""
     logging.info("Starting evaluation mode...")
-    
-    # Load checkpoint
-    checkpoint_path = checkpoint_dir / 'model.pt'
 
     if checkpoint_path.exists():
         logging.info(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-        model.load_state_dict(checkpoint, strict=True)
-        logging.info("Checkpoint loaded successfully")
+        if 'model_state_dict' in checkpoint:
+            checkpoint = checkpoint['model_state_dict']
     else:
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
     
+    model.load_state_dict(checkpoint, strict=True)
+    logging.info("Checkpoint loaded successfully")
+
     # Create evaluator
     evaluator = Evaluator(
         model=model,
@@ -205,7 +195,7 @@ def eval_mode(
     # logging.info(f"Test Loss: {test_statistics:.4f}")
     
     # Save results
-    results_path = checkpoint_dir / 'evaluation_results.txt'
+    results_path = checkpoint_path.parent / f'evaluation_{checkpoint_path.stem}.txt'
     with open(results_path, 'w') as f:
         f.write("Test Loss:\n")
         for key, value in test_statistics.items():
@@ -240,7 +230,7 @@ def main():
         '--checkpoint',
         type=str,
         default=None,
-        help='Path to checkpoint directory for continued training or evaluation'
+        help='Path to checkpoint file for continued training or evaluation'
     )
     parser.add_argument(
         '--seed',
@@ -259,11 +249,14 @@ def main():
     if args.mode == 'eval' and args.checkpoint is None:
         parser.error("--checkpoint is required in eval mode")
 
+    checkpoint_path = Path(args.checkpoint) if args.checkpoint else None
+
     # Load configuration
-    config = load_config(args.config if args.config is not None else os.path.join(args.checkpoint, 'configs.yaml'))
+    config_path = checkpoint_path.parent / 'configs.yaml' if checkpoint_path else args.config
+    config = load_config(config_path)
     # print(type(config['training']['lr']))
     # Setup logging
-    logging.info(f"Configuration loaded from {args.config}")
+    logging.info(f"Configuration loaded from {config_path}")
     logging.info(f"Running in {args.mode} mode")
 
     # Set random seed for reproducibility
@@ -331,12 +324,11 @@ def main():
     else:
         logging.info(f"Test samples: {len(dataloader_dict['test'].dataset)}, WT samples: {len(dataloader_dict.get('test_wt', dataloader_dict['test']).dataset)}, Mutation samples: {len(dataloader_dict.get('test_mutation', dataloader_dict['test']).dataset)}")
 
-    checkpoint_dir = Path(args.checkpoint) if args.checkpoint else None
     if args.mode == 'train':
-        train_mode(model, dataloader_dict, config, checkpoint_dir, timestamp, device)
+        train_mode(model, dataloader_dict, config, checkpoint_path, timestamp, device)
     elif args.mode == 'eval':
-        assert checkpoint_dir is not None
-        eval_mode(model, dataloader_dict, checkpoint_dir, device)
+        assert checkpoint_path is not None
+        eval_mode(model, dataloader_dict, checkpoint_path, device)
 
     logging.info(f"{args.mode.capitalize()} completed successfully")
 

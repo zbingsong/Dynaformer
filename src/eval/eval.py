@@ -25,7 +25,7 @@ class Evaluator:
         with torch.no_grad():
             for sample in dataloader:
                 sample = self._move_to_device(sample)
-                logits: torch.Tensor = self.model(sample, sample.get('perturb', None)).detach() # logits shape: [batch, num_classes]
+                logits: torch.Tensor = self.model(sample).detach() # logits shape: [batch, num_classes]
                 all_logits.append(logits)
 
                 targets = sample["y"]
