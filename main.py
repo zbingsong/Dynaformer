@@ -325,6 +325,7 @@ def main():
         logging.info(f"Test samples: {len(dataloader_dict['test'].dataset)}, WT samples: {len(dataloader_dict.get('test_wt', dataloader_dict['test']).dataset)}, Mutation samples: {len(dataloader_dict.get('test_mutation', dataloader_dict['test']).dataset)}")
 
     if args.mode == 'train':
+        timestamp = f'{timestamp}_{split_method}_{seed}'
         train_mode(model, dataloader_dict, config, checkpoint_path, timestamp, device)
     elif args.mode == 'eval':
         assert checkpoint_path is not None
