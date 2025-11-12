@@ -1,7 +1,6 @@
 import argparse
 from datetime import datetime
 import logging
-import os
 from pathlib import Path
 import random
 import numpy as np
@@ -190,7 +189,9 @@ def eval_mode(
     # Evaluate on test set
     logging.info("Evaluating on test set...")
     test_statistics = evaluator.evaluate(dataloader_dict['test'])
+    logging.info("Evaluating on test WT set...")
     test_wt_statistics = evaluator.evaluate(dataloader_dict.get('test_wt', dataloader_dict['test']))
+    logging.info("Evaluating on test mutation set...")
     test_mutation_statistics = evaluator.evaluate(dataloader_dict.get('test_mutation', dataloader_dict['test']))
     # logging.info(f"Test Loss: {test_statistics:.4f}")
     
@@ -216,9 +217,9 @@ def main():
         '--mode',
         type=str,
         required=True,
-        choices=['train', 'eval', 'preprocess1', 'preprocess2', 'preprocess3'],
+        choices=['train', 'eval', 'preprocess'],
         default='train',
-        help='Mode to run: train, eval, preprocess1, preprocess2, preprocess3'
+        help='Mode to run: train, eval, preprocess'
     )
     parser.add_argument(
         '--config',
@@ -271,21 +272,12 @@ def main():
 
     torch.set_default_dtype(torch.float32)
     torch.set_float32_matmul_precision('high')
-
-    if args.mode == 'preprocess2':
-        from src.preprocess.custom_input_individual import preprocess_main
-        preprocess_main(
-            tsv_path=Path(config['data']['data_df_path']),
-            data_dir=Path(config['data'].get('raw_data_dir', './data/boltz')),
-            output_dir=Path(config['data']['data_dir'])
-        )
-        return
     
-    if args.mode == 'preprocess3':
+    if args.mode == 'preprocess':
         from src.preprocess import DataPreprocessor
         data_preprocessor = DataPreprocessor(
             processed_dir=config['data'].get('processed_dir', './data/processed'),
-            data_dir=config['data'].get('data_dir', './data/pkl'),
+            data_dir=config['data'].get('data_dir', './data/boltz'),
             data_df_path=config['data']['data_df_path'],
             max_nodes=config['model'].get('max_nodes', 600),
         )
