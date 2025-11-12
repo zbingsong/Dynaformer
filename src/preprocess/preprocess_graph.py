@@ -9,7 +9,7 @@ from typing import Tuple
 def convert_to_single_emb(x: torch.Tensor, offset: int = 512):
     """Convert multi-dimensional features to single embedding space."""
     feature_num = x.size(1) if len(x.size()) > 1 else 1
-    feature_offset = 1 + torch.arange(0, feature_num * offset, offset, dtype=torch.long)
+    feature_offset = 1 + torch.arange(0, feature_num * offset, offset, dtype=torch.int32)
     x = x + feature_offset
     return x
 
@@ -26,8 +26,8 @@ def floyd_warshall(adjacency_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray
         path: intermediate nodes for path reconstruction
     """
     n = adjacency_matrix.shape[0]
-    M = adjacency_matrix.astype(np.int64, copy=True)
-    path = -1 * np.ones([n, n], dtype=np.int64)
+    M = adjacency_matrix.astype(np.int32, copy=True)
+    path = -1 * np.ones([n, n], dtype=np.int32)
     
     # Set unreachable nodes distance to 510
     for i in range(n):
@@ -78,7 +78,7 @@ def gen_edge_input(max_dist: int, path: np.ndarray, edge_feat: np.ndarray) -> np
         edge_fea_all: edge features along shortest paths [n, n, max_dist, feat_dim]
     """
     n = path.shape[0]
-    edge_fea_all = -1 * np.ones([n, n, max_dist, edge_feat.shape[-1]], dtype=np.int64)
+    edge_fea_all = -1 * np.ones([n, n, max_dist, edge_feat.shape[-1]], dtype=np.int32)
     
     for i in range(n):
         for j in range(n):
@@ -112,7 +112,7 @@ def gen_angle_dist(item: Data) -> Tuple[torch.Tensor, torch.Tensor]:
     dense_adj = to_dense_adj(edge_index, max_num_nodes=n_node).squeeze()
     n_angle = 28
     
-    neighbors = torch.zeros(n_node, n_angle, dtype=torch.long) - 1
+    neighbors = torch.zeros(n_node, n_angle, dtype=torch.int32) - 1
     for i in range(n_node):
         n = dense_adj[i].nonzero().squeeze(dim=1)[:n_angle]
         neighbors[i, :n.shape[0]] = n
@@ -174,7 +174,7 @@ def preprocess_item(item: Data) -> Data:
     # Edge feature encoding
     if len(edge_attr.size()) == 1:
         edge_attr = edge_attr[:, None]
-    attn_edge_type = torch.zeros([N, N, edge_attr.size(-1)], dtype=torch.long)
+    attn_edge_type = torch.zeros([N, N, edge_attr.size(-1)], dtype=torch.int32)
     attn_edge_type[edge_index[0, :], edge_index[1, :]] = (
         convert_to_single_emb(edge_attr) + 1
     )
@@ -183,22 +183,22 @@ def preprocess_item(item: Data) -> Data:
     shortest_path_result, path = floyd_warshall(adj.numpy())
     max_dist = np.amax(shortest_path_result)
     edge_input = gen_edge_input(max_dist, path, attn_edge_type.numpy())
-    spatial_pos = torch.from_numpy(shortest_path_result).long()
-    attn_bias = torch.zeros([N + 1, N + 1], dtype=torch.float)  # with graph token
+    spatial_pos = torch.from_numpy(shortest_path_result).to(torch.int32)
+    attn_bias = torch.zeros([N + 1, N + 1], dtype=torch.float32)  # with graph token
     
     # Compute angle and distance features if position available
     if hasattr(item, 'pos') and item.pos is not None:
         angle, dists = gen_angle_dist(item)
-        item.angle = angle.to(torch.float)
-        item.dists = dists.to(torch.float)
-    
+        item.angle = angle.to(torch.float32)
+        item.dists = dists.to(torch.float32)
+
     # Combine all features
     item.x = x
     item.attn_bias = attn_bias
     item.attn_edge_type = attn_edge_type
     item.spatial_pos = spatial_pos
-    item.in_degree = adj.long().sum(dim=1).view(-1)
+    item.in_degree = adj.to(torch.int32).sum(dim=1).view(-1)
     item.out_degree = item.in_degree  # for undirected graph
-    item.edge_input = torch.from_numpy(edge_input).long()
+    item.edge_input = torch.from_numpy(edge_input).to(torch.int32)
     
     return item

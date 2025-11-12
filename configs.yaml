@@ -44,14 +44,12 @@ training:
     flag_mag: 0.01
 
 data:
-  num_workers: 8
+  num_workers: 4
   # data_buffer_size: 20
-  raw_data_dir: "/data/bzeng/Dynaformer/data/boltz_failed"
-  data_dir: "/data/bzeng/Dynaformer/data/pkl"
+  data_dir: "/data/bzeng/Dynaformer/data/boltz"
+  processed_dir: "/data/bzeng/Dynaformer/data/processed"
   data_df_path: "/data/bzeng/Dynaformer/data/davis_complete_with_smiles.tsv"
   mmseqs_seq_clus_df_path: "/data/bzeng/Dynaformer/data/davis_complete_id50_cluster.tsv"
-  split_method: "protein_seqid"
+  split_method: "wt_mutation"
   split_frac: [0.7, 0.1, 0.2]
-  seeds: [0, 1, 2, 3, 4]
   tmp_dir: "/data/bzeng/tmp"
-  processed_dir: "/data/bzeng/Dynaformer/data/processed"
