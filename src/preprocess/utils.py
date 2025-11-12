@@ -431,22 +431,3 @@ def obabel_sdf2mol(in_file: Path, out_file: Path):
 
 def obabel_mol22mol(in_file: Path, out_file: Path):
     run(['obabel', '-imol2', str(in_file), '-omol', f'-O{str(out_file)}', '-x3v', '-h', '--partialcharge', 'eem'], check=True, stdout=DEVNULL, stderr=DEVNULL)
-
-
-if __name__ == "__main__":
-    # from sys import stderr
-    from preprocess import gen_feature
-    path = Path("/mnt/yaosen-data/PDBBind/refined-set-2019")
-    d = path / '2epn'
-    print(d.name)
-    # if len(d.name) != "2epn": continue
-    ligand = read_mol(d / f'{d.name}_ligand.sdf')
-    pocket = read_mol(d / f"{d.name}_pocket.sdf")
-    res = gen_feature(ligand, pocket, d.name)
-    for atom in ligand.GetAtoms():
-        if atom.GetSymbol() == "H":
-            print("HHH")
-    for atom in pocket.GetAtoms():
-        if atom.GetSymbol() == "H":
-            print("HHH")
-                

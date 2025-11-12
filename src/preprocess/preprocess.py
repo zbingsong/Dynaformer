@@ -67,7 +67,7 @@ def gen_spatial_edge(dm: np.ndarray, spatial_cutoff: float = 5):
     edge_index = [(x, y) for x, y in zip(src, dst)]
     edge_attr = np.array([SPATIAL_EDGE for _ in edge_index])
 
-    edge_index = np.array(edge_index, dtype=np.int32).T
+    edge_index = np.array(edge_index, dtype=np.int64).T
     edge_attr = np.array(edge_attr, dtype=np.int32)
     return edge_index, edge_attr
 
@@ -78,7 +78,7 @@ def gen_ligpro_edge(dm: np.ndarray, pocket_cutoff: float):
     edge_index = [(x, y + lig_num_atom) for x, y in zip(lig_idx, pro_idx)]
     edge_index += [(y + lig_num_atom, x) for x, y in zip(lig_idx, pro_idx)]
     edge_attr = np.array([SPATIAL_EDGE for _ in edge_index])
-    edge_index = np.array(edge_index, dtype=np.int32).T
+    edge_index = np.array(edge_index, dtype=np.int64).T
     edge_attr = np.array(edge_attr, dtype=np.int32)
     return edge_index, edge_attr
 
@@ -159,7 +159,7 @@ def load_pk_data(data_path: Path):
 def to_pyg_graph(raw: list, **kwargs):
     comp_coord, comp_feat, comp_ei, comp_ea, comp_num_node, comp_num_edge, rfscore, gbscore, ecif, pk, name = raw
 
-    d = Data(x=torch.from_numpy(comp_feat).to(torch.int32), edge_index=torch.from_numpy(comp_ei).to(torch.int32), edge_attr=torch.from_numpy(comp_ea).to(torch.int32),
+    d = Data(x=torch.from_numpy(comp_feat).to(torch.int32), edge_index=torch.from_numpy(comp_ei).to(torch.int64), edge_attr=torch.from_numpy(comp_ea).to(torch.int32),
              pos=torch.from_numpy(comp_coord).to(torch.float32), y=torch.tensor([pk], dtype=torch.float32), pdbid=name,
              num_node=torch.from_numpy(comp_num_node).to(torch.int32), num_edge=torch.from_numpy(comp_num_edge).to(torch.int32),
              rfscore=torch.from_numpy(rfscore).to(torch.float32), gbscore=torch.from_numpy(gbscore).to(torch.float32),
@@ -236,8 +236,3 @@ def RF_score(lig_info: dict, pro_info: dict):
             v = d[d < 12].shape[0]
             fp[i, j] = v
     return fp.flatten()
-
-
-
-
-

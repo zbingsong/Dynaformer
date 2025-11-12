@@ -1,3 +1,2 @@
-from .custom_input_individual import preprocess_main
 from .generate_datasets import DataPreprocessor
 from .preprocess_graph import preprocess_item

@@ -24,12 +24,10 @@ training:
   optimizer:
     type: "adam"
     lr: 0.0001
-    # end_lr: 1e-09
     weight_decay: 0.00001
   scheduler:
     type: "polynomial_decay"
     warmup_updates: 10
-    patience: 10
     power: 1.0
   amp:
     use_amp: False
@@ -46,10 +44,9 @@ training:
 data:
   num_workers: 4
   # data_buffer_size: 20
-  data_dir: "/data/bzeng/Dynaformer/data/boltz"
-  processed_dir: "/data/bzeng/Dynaformer/data/processed"
-  data_df_path: "/data/bzeng/Dynaformer/data/davis_complete_with_smiles.tsv"
-  mmseqs_seq_clus_df_path: "/data/bzeng/Dynaformer/data/davis_complete_id50_cluster.tsv"
+  data_dir: "data/boltz"
+  processed_dir: "data/processed"
+  data_df_path: "data/davis_complete_with_smiles.tsv"
+  mmseqs_seq_clus_df_path: "data/davis_complete_id50_cluster.tsv"
   split_method: "wt_mutation"
   split_frac: [0.7, 0.1, 0.2]
-  tmp_dir: "/data/bzeng/tmp"

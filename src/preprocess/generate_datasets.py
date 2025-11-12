@@ -66,7 +66,7 @@ class DataPreprocessor:
                 msg = f"Missing files for row {idx} ({base_name}): " \
                     f"{'PDB missing' if not pdb_path.exists() else ''} " \
                     f"{'SDF missing' if not sdf_path.exists() else ''}"
-                print(msg)
+                logging.warning(msg)
                 continue  # Skip this entry if files are missing
 
             receptors.append(str(pdb_path.resolve()))
@@ -74,7 +74,7 @@ class DataPreprocessor:
             names.append(base_name)
             pks.append(y)
 
-        print(f"Built lists of length {len(names)} (receptors/ligands/names/pks).")
+        logging.info(f"Built lists of length {len(names)} (receptors/ligands/names/pks).")
         return receptors, ligands, names, pks
 
 
@@ -171,7 +171,7 @@ class DataPreprocessor:
             # Set graph properties
             graph.y = graph.y.reshape(-1)
             graph = preprocess_item(graph)
-            with open(self.processed_dir / name, 'wb') as f:
+            with open(file_path, 'wb') as f:
                 pickle.dump(graph, f)
             return True
         
@@ -180,7 +180,7 @@ class DataPreprocessor:
             raise
 
         except Exception as e:
-            logging.error(f"Error loading {file_path}: {e}")
+            logging.error(f"Error building {name}: {e}")
             return False
 
 
